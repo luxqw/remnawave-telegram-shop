@@ -159,9 +159,6 @@ const bytesInGigabyte = 1073741824
 
 func InitConfig() {
 	err := godotenv.Load(".env")
-	if err != nil {
-		slog.Warn("Env file not found")
-	}
 
 	conf.adminTelegramId, err = strconv.ParseInt(os.Getenv("ADMIN_TELEGRAM_ID"), 10, 64)
 	if err != nil {

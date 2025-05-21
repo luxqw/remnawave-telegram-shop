@@ -7,6 +7,8 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"log/slog"
+	"remnawave-tg-shop-bot/utils"
 	"time"
 )
 
@@ -154,6 +156,7 @@ func (cr *CustomerRepository) Create(ctx context.Context, customer *Customer) (*
 	customer.ID = id
 	customer.CreatedAt = createdAt
 
+	slog.Info("user created in bot database", "telegramId", utils.MaskHalfInt64(customer.TelegramID))
 	return customer, nil
 }
 
@@ -190,7 +193,7 @@ func (cr *CustomerRepository) UpdateFields(ctx context.Context, id int64, update
 
 	rowsAffected := result.RowsAffected()
 	if rowsAffected == 0 {
-		return fmt.Errorf("no customer found with id: %d", id)
+		return fmt.Errorf("no customer found with id: %d", utils.MaskHalfInt64(id))
 	}
 
 	if err := tx.Commit(ctx); err != nil {

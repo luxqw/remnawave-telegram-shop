@@ -6,6 +6,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"log/slog"
+	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/cryptopay"
 	"remnawave-tg-shop-bot/internal/database"
@@ -13,6 +14,7 @@ import (
 	"remnawave-tg-shop-bot/internal/sync"
 	"remnawave-tg-shop-bot/internal/translation"
 	"remnawave-tg-shop-bot/internal/yookasa"
+	"remnawave-tg-shop-bot/utils"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +29,7 @@ type Handler struct {
 	paymentService     *payment.PaymentService
 	syncService        *sync.SyncService
 	referralRepository *database.ReferralRepository
+	cache              *cache.Cache
 }
 
 func NewHandler(
@@ -36,7 +39,7 @@ func NewHandler(
 	customerRepository *database.CustomerRepository,
 	purchaseRepository *database.PurchaseRepository,
 	cryptoPayClient *cryptopay.Client,
-	yookasaClient *yookasa.Client, referralRepository *database.ReferralRepository) *Handler {
+	yookasaClient *yookasa.Client, referralRepository *database.ReferralRepository, cache *cache.Cache) *Handler {
 	return &Handler{
 		syncService:        syncService,
 		paymentService:     paymentService,
@@ -46,6 +49,7 @@ func NewHandler(
 		yookasaClient:      yookasaClient,
 		translation:        translation,
 		referralRepository: referralRepository,
+		cache:              cache,
 	}
 }
 
@@ -100,7 +104,6 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 			slog.Error("error creating customer", err)
 			return
 		}
-		slog.Info("user created", "telegramId", update.Message.Chat.ID)
 
 		if strings.Contains(update.Message.Text, "ref_") {
 			arg := strings.Split(update.Message.Text, " ")[1]
@@ -118,7 +121,7 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 						slog.Error("error creating referral", err)
 						return
 					}
-					slog.Info("referral created", "referrerId", referrerId, "refereeId", existingCustomer.TelegramID)
+					slog.Info("referral created", "referrerId", utils.MaskHalfInt64(referrerId), "refereeId", utils.MaskHalfInt64(existingCustomer.TelegramID))
 				}
 			}
 		}
@@ -226,7 +229,6 @@ func (h Handler) CreateCustomerIfNotExistMiddleware(next bot.HandlerFunc) bot.Ha
 				slog.Error("error creating customer", err)
 				return
 			}
-			slog.Info("user created", "telegramId", telegramId)
 		} else {
 			updates := map[string]interface{}{
 				"language": langCode,
@@ -326,7 +328,7 @@ func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 	if c == nil {
-		slog.Error("customer not exist", "chatID", update.CallbackQuery.Message.Message.From.ID, "error", err)
+		slog.Error("customer not exist", "telegramId", utils.MaskHalfInt64(update.CallbackQuery.From.ID), "error", err)
 		return
 	}
 	if c.SubscriptionLink != nil {
@@ -361,7 +363,7 @@ func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, u
 		return
 	}
 	if c == nil {
-		slog.Error("customer not exist", "chatID", update.CallbackQuery.Message.Message.From.ID, "error", err)
+		slog.Error("customer not exist", "telegramId", utils.MaskHalfInt64(update.CallbackQuery.From.ID), "error", err)
 		return
 	}
 	if c.SubscriptionLink != nil {
@@ -528,8 +530,7 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	}
 
 	ctxWithUsername := context.WithValue(ctx, "username", update.CallbackQuery.From.Username)
-	paymentURL, err := h.paymentService.CreatePurchase(ctxWithUsername, price, month, customer, invoiceType)
-
+	paymentURL, purchaseId, err := h.paymentService.CreatePurchase(ctxWithUsername, price, month, customer, invoiceType)
 	if err != nil {
 		slog.Error("Error creating payment", err)
 		return
@@ -537,7 +538,7 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 
 	langCode := update.CallbackQuery.From.LanguageCode
 
-	_, err = b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+	message, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
 		ReplyMarkup: models.InlineKeyboardMarkup{
@@ -551,8 +552,9 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	})
 	if err != nil {
 		slog.Error("Error updating sell message", err)
+		return
 	}
-
+	h.cache.Set(purchaseId, message.ID)
 }
 
 func (h Handler) ConnectCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -562,7 +564,7 @@ func (h Handler) ConnectCommandHandler(ctx context.Context, b *bot.Bot, update *
 		return
 	}
 	if customer == nil {
-		slog.Error("customer not exist", "chatID", update.Message.Chat.ID, "error", err)
+		slog.Error("customer not exist", "telegramId", utils.MaskHalfInt64(update.Message.Chat.ID), "error", err)
 		return
 	}
 
@@ -597,7 +599,7 @@ func (h Handler) ConnectCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 	if customer == nil {
-		slog.Error("customer not exist", "chatID", callback.Chat.ID, "error", err)
+		slog.Error("customer not exist", "telegramId", utils.MaskHalfInt64(callback.Chat.ID), "error", err)
 		return
 	}
 

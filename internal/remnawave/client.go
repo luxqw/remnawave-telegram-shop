@@ -6,8 +6,10 @@ import (
 	"fmt"
 	remapi "github.com/Jolymmiles/remnawave-api-go/api"
 	"github.com/google/uuid"
+	"log/slog"
 	"net/http"
 	"remnawave-tg-shop-bot/internal/config"
+	"remnawave-tg-shop-bot/utils"
 	"strconv"
 	"strings"
 	"time"
@@ -106,14 +108,20 @@ func (r *Client) updateUser(ctx context.Context, existingUser *remapi.UserDto, t
 		TrafficLimitBytes: remapi.NewOptInt(trafficLimit),
 	}
 
+	var username string
 	if ctx.Value("username") != nil {
-		userUpdate.Description = remapi.NewOptNilString(ctx.Value("username").(string))
+		username = ctx.Value("username").(string)
+		userUpdate.Description = remapi.NewOptNilString(username)
+	} else {
+		username = ""
 	}
 
 	updateUser, err := r.client.UsersControllerUpdateUser(ctx, userUpdate)
 	if err != nil {
 		return nil, err
 	}
+	tgid, _ := existingUser.TelegramId.Get()
+	slog.Info("updated user", "telegramId", utils.MaskHalf(strconv.Itoa(tgid)), "username", utils.MaskHalf(username), "days", days)
 	return &updateUser.Response, nil
 }
 
@@ -150,14 +158,19 @@ func (r *Client) createUser(ctx context.Context, customerId int64, telegramId in
 		TrafficLimitBytes:    remapi.NewOptInt(trafficLimit),
 	}
 
+	var tgUsername string
 	if ctx.Value("username") != nil {
+		tgUsername = ctx.Value("username").(string)
 		createUserRequestDto.Description = remapi.NewOptString(ctx.Value("username").(string))
+	} else {
+		tgUsername = ""
 	}
 
 	userCreate, err := r.client.UsersControllerCreateUser(ctx, &createUserRequestDto)
 	if err != nil {
 		return nil, err
 	}
+	slog.Info("created user", "telegramId", utils.MaskHalf(strconv.FormatInt(telegramId, 10)), "username", utils.MaskHalf(tgUsername), "days", days)
 	return &userCreate.Response, nil
 }
 

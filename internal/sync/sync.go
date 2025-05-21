@@ -20,6 +20,7 @@ func NewSyncService(client *remnawave.Client, customerRepository *database.Custo
 }
 
 func (s SyncService) Sync() {
+	slog.Info("Starting sync")
 	ctx := context.Background()
 	var telegramIDs []int64
 	telegramIDsSet := make(map[int64]int64)

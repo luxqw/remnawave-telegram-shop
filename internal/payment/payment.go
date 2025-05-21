@@ -6,12 +6,14 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"log/slog"
+	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/cryptopay"
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/remnawave"
 	"remnawave-tg-shop-bot/internal/translation"
 	"remnawave-tg-shop-bot/internal/yookasa"
+	"remnawave-tg-shop-bot/utils"
 	"time"
 )
 
@@ -24,6 +26,7 @@ type PaymentService struct {
 	cryptoPayClient    *cryptopay.Client
 	yookasaClient      *yookasa.Client
 	referralRepository *database.ReferralRepository
+	cache              *cache.Cache
 }
 
 func NewPaymentService(
@@ -35,6 +38,7 @@ func NewPaymentService(
 	cryptoPayClient *cryptopay.Client,
 	yookasaClient *yookasa.Client,
 	referralRepository *database.ReferralRepository,
+	cache *cache.Cache,
 ) *PaymentService {
 	return &PaymentService{
 		purchaseRepository: purchaseRepository,
@@ -45,6 +49,7 @@ func NewPaymentService(
 		cryptoPayClient:    cryptoPayClient,
 		yookasaClient:      yookasaClient,
 		referralRepository: referralRepository,
+		cache:              cache,
 	}
 }
 
@@ -54,7 +59,7 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		return err
 	}
 	if purchase == nil {
-		return fmt.Errorf("purchase with crypto invoice id %d not found", purchaseId)
+		return fmt.Errorf("purchase with crypto invoice id %d not found", utils.MaskHalfInt64(purchaseId))
 	}
 
 	customer, err := s.customerRepository.FindById(ctx, purchase.CustomerID)
@@ -62,7 +67,17 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		return err
 	}
 	if customer == nil {
-		return fmt.Errorf("customer %s not found", purchase.CustomerID)
+		return fmt.Errorf("customer %s not found", utils.MaskHalfInt64(purchase.CustomerID))
+	}
+
+	if messageId, b := s.cache.Get(purchase.ID); b {
+		_, err = s.telegramBot.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    customer.TelegramID,
+			MessageID: messageId,
+		})
+		if err != nil {
+			slog.Error("Error deleting message", err)
+		}
 	}
 
 	user, err := s.remnawaveClient.CreateOrUpdateUser(ctx, customer.ID, customer.TelegramID, config.TrafficLimit(), purchase.Month*30)
@@ -127,7 +142,7 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 	if err != nil {
 		return err
 	}
-	slog.Info("Granted referral bonus", "customer_id", refereeCustomer.ID)
+	slog.Info("Granted referral bonus", "customer_id", utils.MaskHalfInt64(refereeCustomer.ID))
 	_, err = s.telegramBot.SendMessage(ctxReferee, &bot.SendMessageParams{
 		ChatID:    refereeCustomer.TelegramID,
 		ParseMode: models.ParseModeHTML,
@@ -136,6 +151,7 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 			InlineKeyboard: s.createConnectKeyboard(refereeCustomer),
 		},
 	})
+	slog.Info("purchase processed", "purchase_id", utils.MaskHalfInt64(purchase.ID), "type", purchase.InvoiceType, "customer_id", utils.MaskHalfInt64(customer.ID))
 
 	return nil
 }
@@ -161,7 +177,7 @@ func (s PaymentService) createConnectKeyboard(customer *database.Customer) [][]m
 	return inlineCustomerKeyboard
 }
 
-func (s PaymentService) CreatePurchase(ctx context.Context, amount int, months int, customer *database.Customer, invoiceType database.InvoiceType) (string, error) {
+func (s PaymentService) CreatePurchase(ctx context.Context, amount int, months int, customer *database.Customer, invoiceType database.InvoiceType) (url string, purchaseId int64, err error) {
 	switch invoiceType {
 	case database.InvoiceTypeCrypto:
 		return s.createCryptoInvoice(ctx, amount, months, customer)
@@ -170,12 +186,12 @@ func (s PaymentService) CreatePurchase(ctx context.Context, amount int, months i
 	case database.InvoiceTypeTelegram:
 		return s.createTelegramInvoice(ctx, amount, months, customer)
 	default:
-		return "", fmt.Errorf("unknown invoice type: %s", invoiceType)
+		return "", 0, fmt.Errorf("unknown invoice type: %s", invoiceType)
 	}
 }
 
-func (s PaymentService) createCryptoInvoice(ctx context.Context, amount int, months int, customer *database.Customer) (string, error) {
-	purchaseId, err := s.purchaseRepository.Create(ctx, &database.Purchase{
+func (s PaymentService) createCryptoInvoice(ctx context.Context, amount int, months int, customer *database.Customer) (url string, purchaseId int64, err error) {
+	purchaseId, err = s.purchaseRepository.Create(ctx, &database.Purchase{
 		InvoiceType: database.InvoiceTypeCrypto,
 		Status:      database.PurchaseStatusNew,
 		Amount:      float64(amount),
@@ -185,7 +201,7 @@ func (s PaymentService) createCryptoInvoice(ctx context.Context, amount int, mon
 	})
 	if err != nil {
 		slog.Error("Error creating purchase", err)
-		return "", err
+		return "", 0, err
 	}
 
 	invoice, err := s.cryptoPayClient.CreateInvoice(&cryptopay.InvoiceRequest{
@@ -200,7 +216,7 @@ func (s PaymentService) createCryptoInvoice(ctx context.Context, amount int, mon
 	})
 	if err != nil {
 		slog.Error("Error creating invoice", err)
-		return "", err
+		return "", 0, err
 	}
 
 	updates := map[string]interface{}{
@@ -212,14 +228,14 @@ func (s PaymentService) createCryptoInvoice(ctx context.Context, amount int, mon
 	err = s.purchaseRepository.UpdateFields(ctx, purchaseId, updates)
 	if err != nil {
 		slog.Error("Error updating purchase", err)
-		return "", err
+		return "", 0, err
 	}
 
-	return invoice.BotInvoiceUrl, nil
+	return invoice.BotInvoiceUrl, purchaseId, nil
 }
 
-func (s PaymentService) createYookasaInvoice(ctx context.Context, amount int, months int, customer *database.Customer) (string, error) {
-	purchaseId, err := s.purchaseRepository.Create(ctx, &database.Purchase{
+func (s PaymentService) createYookasaInvoice(ctx context.Context, amount int, months int, customer *database.Customer) (url string, purchaseId int64, err error) {
+	purchaseId, err = s.purchaseRepository.Create(ctx, &database.Purchase{
 		InvoiceType: database.InvoiceTypeYookasa,
 		Status:      database.PurchaseStatusNew,
 		Amount:      float64(amount),
@@ -229,13 +245,13 @@ func (s PaymentService) createYookasaInvoice(ctx context.Context, amount int, mo
 	})
 	if err != nil {
 		slog.Error("Error creating purchase", err)
-		return "", err
+		return "", 0, err
 	}
 
 	invoice, err := s.yookasaClient.CreateInvoice(ctx, amount, months, customer.ID, purchaseId)
 	if err != nil {
 		slog.Error("Error creating invoice", err)
-		return "", err
+		return "", 0, err
 	}
 
 	updates := map[string]interface{}{
@@ -247,14 +263,14 @@ func (s PaymentService) createYookasaInvoice(ctx context.Context, amount int, mo
 	err = s.purchaseRepository.UpdateFields(ctx, purchaseId, updates)
 	if err != nil {
 		slog.Error("Error updating purchase", err)
-		return "", err
+		return "", 0, err
 	}
 
-	return invoice.Confirmation.ConfirmationURL, nil
+	return invoice.Confirmation.ConfirmationURL, purchaseId, nil
 }
 
-func (s PaymentService) createTelegramInvoice(ctx context.Context, amount int, months int, customer *database.Customer) (string, error) {
-	purchaseId, err := s.purchaseRepository.Create(ctx, &database.Purchase{
+func (s PaymentService) createTelegramInvoice(ctx context.Context, amount int, months int, customer *database.Customer) (url string, purchaseId int64, err error) {
+	purchaseId, err = s.purchaseRepository.Create(ctx, &database.Purchase{
 		InvoiceType: database.InvoiceTypeTelegram,
 		Status:      database.PurchaseStatusNew,
 		Amount:      float64(amount),
@@ -264,7 +280,7 @@ func (s PaymentService) createTelegramInvoice(ctx context.Context, amount int, m
 	})
 	if err != nil {
 		slog.Error("Error creating purchase", err)
-		return "", nil
+		return "", 0, nil
 	}
 
 	invoiceUrl, err := s.telegramBot.CreateInvoiceLink(ctx, &bot.CreateInvoiceLinkParams{
@@ -287,10 +303,10 @@ func (s PaymentService) createTelegramInvoice(ctx context.Context, amount int, m
 	err = s.purchaseRepository.UpdateFields(ctx, purchaseId, updates)
 	if err != nil {
 		slog.Error("Error updating purchase", err)
-		return "", err
+		return "", 0, err
 	}
 
-	return invoiceUrl, nil
+	return invoiceUrl, purchaseId, nil
 }
 
 func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (string, error) {
@@ -333,7 +349,7 @@ func (s PaymentService) CancelPayment(purchaseId int64) error {
 		return err
 	}
 	if purchase == nil {
-		return fmt.Errorf("purchase with crypto invoice id %d not found", purchaseId)
+		return fmt.Errorf("purchase with crypto invoice id %d not found", utils.MaskHalfInt64(purchaseId))
 	}
 
 	purchaseFieldsToUpdate := map[string]interface{}{

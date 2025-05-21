@@ -62,12 +62,10 @@ func RunMigrations(ctx context.Context, migrationConfig *MigrationConfig, pool *
 	if dirty && version == 3 {
 		slog.Warn("Detected dirty migration at version 3: forcing pointer and running down script")
 
-		// Снимаем dirty, устанавливая pointer на ту же версию без исполнения SQL
 		if err := m.Force(int(version)); err != nil {
 			return fmt.Errorf("failed to force migration version: %w", err)
 		}
 
-		// Шаг назад, выполняя именно down-скрипт 3 → 2
 		if err := m.Steps(-1); err != nil && err != migrate.ErrNoChange {
 			return fmt.Errorf("failed to run down migration: %w", err)
 		}
