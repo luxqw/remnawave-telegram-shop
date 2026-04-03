@@ -4,7 +4,7 @@ go 1.25.3
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
-	github.com/go-telegram/bot v1.15.0
+	github.com/go-telegram/bot v1.20.0
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v4 v4.18.3

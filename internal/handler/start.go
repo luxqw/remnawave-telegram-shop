@@ -135,57 +135,49 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 }
 
 func (h Handler) resolveConnectButton(lang string) []models.InlineKeyboardButton {
-	var inlineKeyboard []models.InlineKeyboardButton
+	bd := h.translation.GetButton(lang, "connect_button")
 
 	if config.GetMiniAppURL() != "" {
-		inlineKeyboard = []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(lang, "connect_button"), WebApp: &models.WebAppInfo{
-				URL: config.GetMiniAppURL(),
-			}},
-		}
-	} else {
-		inlineKeyboard = []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(lang, "connect_button"), CallbackData: CallbackConnect},
-		}
+		return []models.InlineKeyboardButton{bd.InlineWebApp(config.GetMiniAppURL())}
 	}
-	return inlineKeyboard
+	return []models.InlineKeyboardButton{bd.InlineCallback(CallbackConnect)}
 }
 
 func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCode string) [][]models.InlineKeyboardButton {
 	var inlineKeyboard [][]models.InlineKeyboardButton
 
 	if existingCustomer.SubscriptionLink == nil && config.TrialDays() > 0 {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "trial_button"), CallbackData: CallbackTrial}})
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "trial_button").InlineCallback(CallbackTrial)})
 	}
 
-	inlineKeyboard = append(inlineKeyboard, [][]models.InlineKeyboardButton{{{Text: h.translation.GetText(langCode, "buy_button"), CallbackData: CallbackBuy}}}...)
+	inlineKeyboard = append(inlineKeyboard, [][]models.InlineKeyboardButton{{h.translation.GetButton(langCode, "buy_button").InlineCallback(CallbackBuy)}}...)
 
 	if existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt.After(time.Now()) {
 		inlineKeyboard = append(inlineKeyboard, h.resolveConnectButton(langCode))
 	}
 
 	if config.GetReferralDays() > 0 {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "referral_button"), CallbackData: CallbackReferral}})
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "referral_button").InlineCallback(CallbackReferral)})
 	}
 
 	if config.ServerStatusURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "server_status_button"), URL: config.ServerStatusURL()}})
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "server_status_button").InlineURL(config.ServerStatusURL())})
 	}
 
 	if config.SupportURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "support_button"), URL: config.SupportURL()}})
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "support_button").InlineURL(config.SupportURL())})
 	}
 
 	if config.FeedbackURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "feedback_button"), URL: config.FeedbackURL()}})
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "feedback_button").InlineURL(config.FeedbackURL())})
 	}
 
 	if config.ChannelURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "channel_button"), URL: config.ChannelURL()}})
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "channel_button").InlineURL(config.ChannelURL())})
 	}
 
 	if config.TosURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "tos_button"), URL: config.TosURL()}})
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "tos_button").InlineURL(config.TosURL())})
 	}
 	return inlineKeyboard
 }

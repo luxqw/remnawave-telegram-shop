@@ -23,31 +23,19 @@ func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *mod
 	var priceButtons []models.InlineKeyboardButton
 
 	if config.Price1() > 0 {
-		priceButtons = append(priceButtons, models.InlineKeyboardButton{
-			Text:         h.translation.GetText(langCode, "month_1"),
-			CallbackData: fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 1, config.Price1()),
-		})
+		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_1").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 1, config.Price1())))
 	}
 
 	if config.Price3() > 0 {
-		priceButtons = append(priceButtons, models.InlineKeyboardButton{
-			Text:         h.translation.GetText(langCode, "month_3"),
-			CallbackData: fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 3, config.Price3()),
-		})
+		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_3").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 3, config.Price3())))
 	}
 
 	if config.Price6() > 0 {
-		priceButtons = append(priceButtons, models.InlineKeyboardButton{
-			Text:         h.translation.GetText(langCode, "month_6"),
-			CallbackData: fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 6, config.Price6()),
-		})
+		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_6").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 6, config.Price6())))
 	}
 
 	if config.Price12() > 0 {
-		priceButtons = append(priceButtons, models.InlineKeyboardButton{
-			Text:         h.translation.GetText(langCode, "month_12"),
-			CallbackData: fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 12, config.Price12()),
-		})
+		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_12").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 12, config.Price12())))
 	}
 
 	keyboard := [][]models.InlineKeyboardButton{}
@@ -60,7 +48,7 @@ func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *mod
 	}
 
 	keyboard = append(keyboard, []models.InlineKeyboardButton{
-		{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart},
+		h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart),
 	})
 
 	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
@@ -89,13 +77,13 @@ func (h Handler) SellCallbackHandler(ctx context.Context, b *bot.Bot, update *mo
 
 	if config.IsCryptoPayEnabled() {
 		keyboard = append(keyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "crypto_button"), CallbackData: fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeCrypto, amount)},
+			h.translation.GetButton(langCode, "crypto_button").InlineCallback(fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeCrypto, amount)),
 		})
 	}
 
 	if config.IsYookasaEnabled() {
 		keyboard = append(keyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "card_button"), CallbackData: fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeYookasa, amount)},
+			h.translation.GetButton(langCode, "card_button").InlineCallback(fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeYookasa, amount)),
 		})
 	}
 
@@ -122,19 +110,19 @@ func (h Handler) SellCallbackHandler(ctx context.Context, b *bot.Bot, update *mo
 
 		if shouldShowStarsButton {
 			keyboard = append(keyboard, []models.InlineKeyboardButton{
-				{Text: h.translation.GetText(langCode, "stars_button"), CallbackData: fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeTelegram, amount)},
+				h.translation.GetButton(langCode, "stars_button").InlineCallback(fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeTelegram, amount)),
 			})
 		}
 	}
 
 	if config.GetTributeWebHookUrl() != "" {
 		keyboard = append(keyboard, []models.InlineKeyboardButton{
-			{Text: h.translation.GetText(langCode, "tribute_button"), URL: config.GetTributePaymentUrl()},
+			h.translation.GetButton(langCode, "tribute_button").InlineURL(config.GetTributePaymentUrl()),
 		})
 	}
 
 	keyboard = append(keyboard, []models.InlineKeyboardButton{
-		{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackBuy},
+		h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackBuy),
 	})
 
 	_, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
@@ -195,8 +183,8 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: h.translation.GetText(langCode, "pay_button"), URL: paymentURL},
-					{Text: h.translation.GetText(langCode, "back_button"), CallbackData: fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, month, price)},
+					h.translation.GetButton(langCode, "pay_button").InlineURL(paymentURL),
+					h.translation.GetButton(langCode, "back_button").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, month, price)),
 				},
 			},
 		},

@@ -36,8 +36,8 @@ func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		Text:      h.translation.GetText(langCode, "trial_text"),
 		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-			{{Text: h.translation.GetText(langCode, "activate_trial_button"), CallbackData: CallbackActivateTrial}},
-			{{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart}},
+			{h.translation.GetButton(langCode, "activate_trial_button").InlineCallback(CallbackActivateTrial)},
+			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
 		}},
 	})
 	if err != nil {
@@ -82,7 +82,7 @@ func (h Handler) createConnectKeyboard(lang string) [][]models.InlineKeyboardBut
 	inlineCustomerKeyboard = append(inlineCustomerKeyboard, h.resolveConnectButton(lang))
 
 	inlineCustomerKeyboard = append(inlineCustomerKeyboard, []models.InlineKeyboardButton{
-		{Text: h.translation.GetText(lang, "back_button"), CallbackData: CallbackStart},
+		h.translation.GetButton(lang, "back_button").InlineCallback(CallbackStart),
 	})
 	return inlineCustomerKeyboard
 }

@@ -159,12 +159,7 @@ func (s *SubscriptionService) sendNotification(ctx context.Context, customer dat
 		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{
-					{
-						Text:         s.tm.GetText(customer.Language, "renew_subscription_button"),
-						CallbackData: handler.CallbackBuy,
-					},
-				},
+				{s.tm.GetButton(customer.Language, "renew_subscription_button").InlineCallback(handler.CallbackBuy)},
 			},
 		},
 	})

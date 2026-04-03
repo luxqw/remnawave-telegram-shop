@@ -194,20 +194,15 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 func (s PaymentService) createConnectKeyboard(customer *database.Customer) [][]models.InlineKeyboardButton {
 	var inlineCustomerKeyboard [][]models.InlineKeyboardButton
 
+	bd := s.translation.GetButton(customer.Language, "connect_button")
 	if config.GetMiniAppURL() != "" {
-		inlineCustomerKeyboard = append(inlineCustomerKeyboard, []models.InlineKeyboardButton{
-			{Text: s.translation.GetText(customer.Language, "connect_button"), WebApp: &models.WebAppInfo{
-				URL: config.GetMiniAppURL(),
-			}},
-		})
+		inlineCustomerKeyboard = append(inlineCustomerKeyboard, []models.InlineKeyboardButton{bd.InlineWebApp(config.GetMiniAppURL())})
 	} else {
-		inlineCustomerKeyboard = append(inlineCustomerKeyboard, []models.InlineKeyboardButton{
-			{Text: s.translation.GetText(customer.Language, "connect_button"), CallbackData: "connect"},
-		})
+		inlineCustomerKeyboard = append(inlineCustomerKeyboard, []models.InlineKeyboardButton{bd.InlineCallback("connect")})
 	}
 
 	inlineCustomerKeyboard = append(inlineCustomerKeyboard, []models.InlineKeyboardButton{
-		{Text: s.translation.GetText(customer.Language, "back_button"), CallbackData: "start"},
+		s.translation.GetButton(customer.Language, "back_button").InlineCallback("start"),
 	})
 	return inlineCustomerKeyboard
 }

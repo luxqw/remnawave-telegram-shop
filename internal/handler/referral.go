@@ -28,12 +28,8 @@ func (h Handler) ReferralCallbackHandler(ctx context.Context, b *bot.Bot, update
 		Text:      text,
 		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: h.translation.GetText(langCode, "share_referral_button"), URL: refLink},
-			},
-			{
-				{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart},
-			},
+			{h.translation.GetButton(langCode, "share_referral_button").InlineURL(refLink)},
+			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
 		}},
 	})
 	if err != nil {

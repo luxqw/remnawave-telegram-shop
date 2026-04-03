@@ -1,41 +1,110 @@
 {
-  "greeting": "👋🏻 <b>Hello</b>\nThis is a bot for connecting to <b>VPN</b>🛡️\n\nAvailable locations:\n Location 1\n Location 2\n\n<b>How to connect:</b>\n• click the <b>Connect</b> button\n• follow the short instructions",
-  "buy_button": "💰 Buy",
-  "connect_button": "🔌 Connect",
-  "back_button": "🔙 Back",
+  "greeting": "👋🏻 <b>Hello</b>\nThis is a bot for connecting to <b>VPN</b>🛡\n\n<b>How to connect:</b>\n• click the <b>Connect</b> button\n• follow the short instructions",
+  "buy_button": {
+    "text": "Buy",
+    "emoji_id": "5258165702707125574"
+  },
+  "connect_button": {
+    "text": "Connect",
+    "emoji_id": "5843553939672274145"
+  },
+  "back_button": {
+    "text": "Back",
+    "emoji_id": "6039539366177541657"
+  },
   "pricing_info": "Russian bank cards and cryptocurrency are accepted for payment",
-  "month_1": "1 month",
-  "month_3": "3 months",
-  "month_6": "6 months",
-  "month_12": "12 months",
-  "crypto_button": "₿ Cryptocurrency",
-  "card_button": "💳 Bank card",
-  "pay_button": "💸 Pay",
+  "month_1": {
+    "text": "1 month",
+    "emoji_id": "5890937706803894250"
+  },
+  "month_3": {
+    "text": "3 months",
+    "emoji_id": "5890937706803894250"
+  },
+  "month_6": {
+    "text": "6 months",
+    "emoji_id": "5890937706803894250"
+  },
+  "month_12": {
+    "text": "12 months",
+    "emoji_id": "5890937706803894250"
+  },
+  "crypto_button": {
+    "text": "Cryptocurrency",
+    "emoji_id": "5402186569006210455"
+  },
+  "card_button": {
+    "text": "Bank card",
+    "emoji_id": "5258165702707125574"
+  },
+  "pay_button": {
+    "text": "Pay",
+    "emoji_id": "5436386989857320953"
+  },
   "subscription_active": "Your subscription is valid until: %s",
   "subscription_link": "\n\nSubscription link: %s",
   "no_subscription": "You don't have an active subscription",
   "subscription_activated": "Your subscription has been activated!",
-  "feedback_button": "⭐ Feedback",
-  "server_status_button": "🟢 Server Status",
-  "support_button": "🆘 Support",
-  "channel_button": "📢 Channel",
-  "tos_button": "Terms Of Service",
+  "feedback_button": {
+    "text": "Feedback",
+    "emoji_id": "5379600444098093058"
+  },
+  "server_status_button": {
+    "text": "Server Status",
+    "emoji_id": "5805532930662996322"
+  },
+  "support_button": {
+    "text": "Support",
+    "emoji_id": "6301027265899661025"
+  },
+  "channel_button": {
+    "text": "Channel",
+    "emoji_id": "6021418126061605425"
+  },
+  "tos_button": {
+    "text": "Terms Of Service",
+    "emoji_id": "5886330010054168711"
+  },
   "subscription_expiring": "⚠️ <b>Subscription Alert</b> ⚠️\n\nYour subscription expires on %s\nTo continue using the service, please renew your subscription",
-  "renew_subscription_button": "🔄 Renew Subscription",
-  "invoice_description" : "Subscription",
-  "invoice_label" : "Subscription",
-  "invoice_title" : "Subscription",
-  "trial_button": "🔥 Try for free",
+  "renew_subscription_button": {
+    "text": "Renew Subscription",
+    "emoji_id": "5260687681733533075"
+  },
+  "invoice_description": "Subscription",
+  "invoice_label": "Subscription",
+  "invoice_title": "Subscription",
+  "trial_button": {
+    "text": "Try for free",
+    "emoji_id": "5089506485931606869"
+  },
   "trial_activated": "Trial period activated",
   "trial_text": "Your trial version is active",
-  "activate_trial_button": "Activate trial version",
-  "referral_button": "🤝 Referrals",
+  "activate_trial_button": {
+    "text": "Activate trial version",
+    "emoji_id": "5089506485931606869"
+  },
+  "referral_button": {
+    "text": "Referrals",
+    "emoji_id": "6032594876506312598"
+  },
   "referral_text": "Invited: %d",
   "referral_bonus_granted": "You have received a referral bonus!",
-  "stars_button": " ⭐Telegram Stars",
-  "share_referral_button": "Share!",
-  "web_app_button_text": "Connect",
-  "tribute_button": "Tribute",
-  "tribute_cancelled" : "Tribute cancelled",
+  "stars_button": {
+    "text": "Telegram Stars",
+    "emoji_id": "5373082993207921989"
+  },
+  "share_referral_button": {
+    "text": "Share!",
+    "emoji_id": "5429651785352501917"
+  },
+  "web_app_button_text": {
+    "text": "Connect",
+    "emoji_id": "5843553939672274145"
+  },
+  "tribute_button": {
+    "text": "Tribute",
+    "emoji_id": "5258165702707125574"
+  },
+  "tribute_cancelled": "Tribute cancelled",
   "access_denied": "⚠️ Access denied. Please update your profile information."
 }

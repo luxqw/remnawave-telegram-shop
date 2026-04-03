@@ -7,9 +7,52 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/go-telegram/bot/models"
 )
 
-type Translation map[string]string
+type ButtonData struct {
+	Text    string `json:"text"`
+	Style   string `json:"style,omitempty"`
+	EmojiID string `json:"emoji_id,omitempty"`
+}
+
+func (bd ButtonData) inline() models.InlineKeyboardButton {
+	btn := models.InlineKeyboardButton{Text: bd.Text}
+	if bd.Style != "" {
+		btn.Style = bd.Style
+	}
+	if bd.EmojiID != "" {
+		btn.IconCustomEmojiID = bd.EmojiID
+	}
+	return btn
+}
+
+func (bd ButtonData) InlineCallback(callbackData string) models.InlineKeyboardButton {
+	btn := bd.inline()
+	btn.CallbackData = callbackData
+	return btn
+}
+
+func (bd ButtonData) InlineURL(url string) models.InlineKeyboardButton {
+	btn := bd.inline()
+	btn.URL = url
+	return btn
+}
+
+func (bd ButtonData) InlineWebApp(url string) models.InlineKeyboardButton {
+	btn := bd.inline()
+	btn.WebApp = &models.WebAppInfo{URL: url}
+	return btn
+}
+
+var validStyles = map[string]bool{
+	"danger":  true,
+	"success": true,
+	"primary": true,
+}
+
+type Translation map[string]json.RawMessage
 
 type Manager struct {
 	translations    map[string]Translation
@@ -63,6 +106,17 @@ func (tm *Manager) InitTranslations(translationsDir string, defaultLanguage stri
 			return fmt.Errorf("failed to parse translation file %s: %w", file.Name(), err)
 		}
 
+		for key, raw := range translation {
+			if len(raw) > 0 && raw[0] == '{' {
+				var bd ButtonData
+				if err := json.Unmarshal(raw, &bd); err == nil && bd.Style != "" {
+					if !validStyles[bd.Style] {
+						return fmt.Errorf("invalid style %q for key %q in %s (must be \"danger\", \"success\" or \"primary\")", bd.Style, key, file.Name())
+					}
+				}
+			}
+		}
+
 		tm.translations[langCode] = translation
 	}
 
@@ -78,16 +132,54 @@ func (tm *Manager) GetText(langCode, key string) string {
 	defer tm.mu.RUnlock()
 
 	if translation, exists := tm.translations[langCode]; exists {
-		if text, exists := translation[key]; exists && text != "" {
-			return text
+		if raw, exists := translation[key]; exists && len(raw) > 0 {
+			if text := extractButton(raw).Text; text != "" {
+				return text
+			}
 		}
 	}
 
 	if translation, exists := tm.translations[tm.defaultLanguage]; exists {
-		if text, exists := translation[key]; exists {
-			return text
+		if raw, exists := translation[key]; exists {
+			return extractButton(raw).Text
 		}
 	}
 
 	return key
+}
+
+func (tm *Manager) GetButton(langCode, key string) ButtonData {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	if translation, exists := tm.translations[langCode]; exists {
+		if raw, exists := translation[key]; exists && len(raw) > 0 {
+			return extractButton(raw)
+		}
+	}
+
+	if translation, exists := tm.translations[tm.defaultLanguage]; exists {
+		if raw, exists := translation[key]; exists {
+			return extractButton(raw)
+		}
+	}
+
+	return ButtonData{Text: key}
+}
+
+func extractButton(raw json.RawMessage) ButtonData {
+	if len(raw) == 0 {
+		return ButtonData{}
+	}
+	if raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			return ButtonData{Text: s}
+		}
+	}
+	var bd ButtonData
+	if err := json.Unmarshal(raw, &bd); err == nil {
+		return bd
+	}
+	return ButtonData{}
 }

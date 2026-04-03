@@ -29,21 +29,16 @@ func (h Handler) ConnectCommandHandler(ctx context.Context, b *bot.Bot, update *
 
 	langCode := update.Message.From.LanguageCode
 
+	bd := h.translation.GetButton(langCode, "connect_button")
 	var markup [][]models.InlineKeyboardButton
 	if config.GetMiniAppURL() != "" {
-		markup = append(markup, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "connect_button"),
-			WebApp: &models.WebAppInfo{
-				URL: config.GetMiniAppURL(),
-			}}})
+		markup = append(markup, []models.InlineKeyboardButton{bd.InlineWebApp(config.GetMiniAppURL())})
 	} else if config.IsWepAppLinkEnabled() {
 		if customer.SubscriptionLink != nil && customer.ExpireAt.After(time.Now()) {
-			markup = append(markup, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "connect_button"),
-				WebApp: &models.WebAppInfo{
-					URL: *customer.SubscriptionLink,
-				}}})
+			markup = append(markup, []models.InlineKeyboardButton{bd.InlineWebApp(*customer.SubscriptionLink)})
 		}
 	}
-	markup = append(markup, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart}})
+	markup = append(markup, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
 
 	isDisabled := true
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -78,21 +73,16 @@ func (h Handler) ConnectCallbackHandler(ctx context.Context, b *bot.Bot, update 
 
 	langCode := update.CallbackQuery.From.LanguageCode
 
+	cbd := h.translation.GetButton(langCode, "connect_button")
 	var markup [][]models.InlineKeyboardButton
 	if config.GetMiniAppURL() != "" {
-		markup = append(markup, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "connect_button"),
-			WebApp: &models.WebAppInfo{
-				URL: config.GetMiniAppURL(),
-			}}})
+		markup = append(markup, []models.InlineKeyboardButton{cbd.InlineWebApp(config.GetMiniAppURL())})
 	} else if config.IsWepAppLinkEnabled() {
 		if customer.SubscriptionLink != nil && customer.ExpireAt.After(time.Now()) {
-			markup = append(markup, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "connect_button"),
-				WebApp: &models.WebAppInfo{
-					URL: *customer.SubscriptionLink,
-				}}})
+			markup = append(markup, []models.InlineKeyboardButton{cbd.InlineWebApp(*customer.SubscriptionLink)})
 		}
 	}
-	markup = append(markup, []models.InlineKeyboardButton{{Text: h.translation.GetText(langCode, "back_button"), CallbackData: CallbackStart}})
+	markup = append(markup, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
 
 	isDisabled := true
 	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
