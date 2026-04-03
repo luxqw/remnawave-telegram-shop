@@ -18,14 +18,11 @@ type ButtonData struct {
 }
 
 func (bd ButtonData) inline() models.InlineKeyboardButton {
-	btn := models.InlineKeyboardButton{Text: bd.Text}
-	if bd.Style != "" {
-		btn.Style = bd.Style
+	return models.InlineKeyboardButton{
+		Text:              bd.Text,
+		Style:             bd.Style,
+		IconCustomEmojiID: bd.EmojiID,
 	}
-	if bd.EmojiID != "" {
-		btn.IconCustomEmojiID = bd.EmojiID
-	}
-	return btn
 }
 
 func (bd ButtonData) InlineCallback(callbackData string) models.InlineKeyboardButton {
@@ -52,10 +49,10 @@ var validStyles = map[string]bool{
 	"primary": true,
 }
 
-type Translation map[string]json.RawMessage
+type translation map[string]ButtonData
 
 type Manager struct {
-	translations    map[string]Translation
+	translations    map[string]translation
 	defaultLanguage string
 	mu              sync.RWMutex
 }
@@ -68,7 +65,7 @@ var (
 func GetInstance() *Manager {
 	once.Do(func() {
 		instance = &Manager{
-			translations:    make(map[string]Translation),
+			translations:    make(map[string]translation),
 			defaultLanguage: "en",
 		}
 	})
@@ -101,23 +98,24 @@ func (tm *Manager) InitTranslations(translationsDir string, defaultLanguage stri
 			return fmt.Errorf("failed to read translation file %s: %w", file.Name(), err)
 		}
 
-		var translation Translation
-		if err := json.Unmarshal(content, &translation); err != nil {
+		var rawMap map[string]json.RawMessage
+		if err := json.Unmarshal(content, &rawMap); err != nil {
 			return fmt.Errorf("failed to parse translation file %s: %w", file.Name(), err)
 		}
 
-		for key, raw := range translation {
-			if len(raw) > 0 && raw[0] == '{' {
-				var bd ButtonData
-				if err := json.Unmarshal(raw, &bd); err == nil && bd.Style != "" {
-					if !validStyles[bd.Style] {
-						return fmt.Errorf("invalid style %q for key %q in %s (must be \"danger\", \"success\" or \"primary\")", bd.Style, key, file.Name())
-					}
-				}
+		parsed := make(translation, len(rawMap))
+		for key, raw := range rawMap {
+			bd, err := parseValue(raw)
+			if err != nil {
+				return fmt.Errorf("failed to parse key %q in %s: %w", key, file.Name(), err)
 			}
+			if bd.Style != "" && !validStyles[bd.Style] {
+				return fmt.Errorf("invalid style %q for key %q in %s (must be \"danger\", \"success\" or \"primary\")", bd.Style, key, file.Name())
+			}
+			parsed[key] = bd
 		}
 
-		tm.translations[langCode] = translation
+		tm.translations[langCode] = parsed
 	}
 
 	if _, exists := tm.translations[tm.defaultLanguage]; !exists {
@@ -128,58 +126,46 @@ func (tm *Manager) InitTranslations(translationsDir string, defaultLanguage stri
 }
 
 func (tm *Manager) GetText(langCode, key string) string {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	if translation, exists := tm.translations[langCode]; exists {
-		if raw, exists := translation[key]; exists && len(raw) > 0 {
-			if text := extractButton(raw).Text; text != "" {
-				return text
-			}
-		}
-	}
-
-	if translation, exists := tm.translations[tm.defaultLanguage]; exists {
-		if raw, exists := translation[key]; exists {
-			return extractButton(raw).Text
-		}
-	}
-
-	return key
+	return tm.lookup(langCode, key).Text
 }
 
 func (tm *Manager) GetButton(langCode, key string) ButtonData {
+	return tm.lookup(langCode, key)
+}
+
+func (tm *Manager) lookup(langCode, key string) ButtonData {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
 
-	if translation, exists := tm.translations[langCode]; exists {
-		if raw, exists := translation[key]; exists && len(raw) > 0 {
-			return extractButton(raw)
+	if t, exists := tm.translations[langCode]; exists {
+		if bd, exists := t[key]; exists && bd.Text != "" {
+			return bd
 		}
 	}
 
-	if translation, exists := tm.translations[tm.defaultLanguage]; exists {
-		if raw, exists := translation[key]; exists {
-			return extractButton(raw)
+	if t, exists := tm.translations[tm.defaultLanguage]; exists {
+		if bd, exists := t[key]; exists {
+			return bd
 		}
 	}
 
 	return ButtonData{Text: key}
 }
 
-func extractButton(raw json.RawMessage) ButtonData {
+func parseValue(raw json.RawMessage) (ButtonData, error) {
 	if len(raw) == 0 {
-		return ButtonData{}
+		return ButtonData{}, nil
 	}
 	if raw[0] == '"' {
 		var s string
-		if err := json.Unmarshal(raw, &s); err == nil {
-			return ButtonData{Text: s}
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return ButtonData{}, err
 		}
+		return ButtonData{Text: s}, nil
 	}
 	var bd ButtonData
-	if err := json.Unmarshal(raw, &bd); err == nil {
-		return bd
+	if err := json.Unmarshal(raw, &bd); err != nil {
+		return ButtonData{}, err
 	}
-	return ButtonData{}
+	return bd, nil
 }
