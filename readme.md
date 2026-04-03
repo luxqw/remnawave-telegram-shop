@@ -113,6 +113,8 @@ The application requires the following environment variables to be set:
 | `TRIBUTE_WEBHOOK_URL`    | Path for webhook handler. Example: /example (https://www.uuidgenerator.net/version4)                                                       |
 | `TRIBUTE_API_KEY`        | Api key, which can be obtained via settings in Tribute app.                                                                                |
 | `TRIBUTE_PAYMENT_URL`    | You payment url for Tribute. (Subscription telegram link)                                                                                  |
+| `TELEGRAM_PROXY_URL`     | Proxy URL for Telegram Bot API requests (optional, e.g., `socks5://host:port` or `http://host:port`)                                      |
+| `MOYNALOG_PROXY_URL`     | Proxy URL for Moy Nalog API requests (optional, e.g., `socks5://host:port` or `http://host:port`)                                         |
 
 ## User Interface
 

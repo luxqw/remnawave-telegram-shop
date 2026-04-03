@@ -203,6 +203,14 @@ func StarsPrice(month int) int {
 func TelegramToken() string {
 	return conf.telegramToken
 }
+
+func TelegramProxyURL() string {
+	return envStringDefault("TELEGRAM_PROXY_URL", "")
+}
+
+func MoynalogProxyURL() string {
+	return envStringDefault("MOYNALOG_PROXY_URL", "")
+}
 func RemnawaveUrl() string {
 	return conf.remnawaveUrl
 }

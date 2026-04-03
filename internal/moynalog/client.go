@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,15 +35,24 @@ type Client struct {
 	authCond     *sync.Cond
 }
 
-func NewClient(baseURL, username, password string) (*Client, error) {
+func NewClient(baseURL, username, password, proxyURL string) (*Client, error) {
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	if proxyURL != "" {
+		parsed, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		transport.Proxy = http.ProxyURL(parsed)
+	}
+
 	c := &Client{
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				IdleConnTimeout:     90 * time.Second,
-				TLSHandshakeTimeout: 10 * time.Second,
-			},
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 		baseURL:  baseURL,
 		username: username,

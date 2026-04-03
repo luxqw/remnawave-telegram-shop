@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"remnawave-tg-shop-bot/internal/cache"
@@ -48,7 +49,7 @@ func main() {
 	var moynalogClient *moynalog.Client
 	if config.IsMoynalogEnabled() {
 		var err error
-		moynalogClient, err = moynalog.NewClient(config.MoynalogUrl(), config.MoynalogUsername(), config.MoynalogPassword())
+		moynalogClient, err = moynalog.NewClient(config.MoynalogUrl(), config.MoynalogUsername(), config.MoynalogPassword(), config.MoynalogProxyURL())
 		if err != nil {
 			log.Fatalf("Moynalog initialization error: %v", err)
 		}
@@ -79,7 +80,20 @@ func main() {
 	cryptoPayClient := cryptopay.NewCryptoPayClient(config.CryptoPayUrl(), config.CryptoPayToken())
 	remnawaveClient := remnawave.NewClient(config.RemnawaveUrl(), config.RemnawaveToken(), config.RemnawaveMode())
 	yookasaClient := yookasa.NewClient(config.YookasaUrl(), config.YookasaShopId(), config.YookasaSecretKey())
-	b, err := bot.New(config.TelegramToken(), bot.WithWorkers(3))
+	botOpts := []bot.Option{bot.WithWorkers(3)}
+	if proxyStr := config.TelegramProxyURL(); proxyStr != "" {
+		proxyURL, parseErr := url.Parse(proxyStr)
+		if parseErr != nil {
+			panic(fmt.Sprintf("invalid TELEGRAM_PROXY_URL: %v", parseErr))
+		}
+		proxyClient := &http.Client{
+			Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)},
+			Timeout:   30 * time.Second,
+		}
+		botOpts = append(botOpts, bot.WithHTTPClient(30*time.Second, proxyClient))
+		slog.Info("Telegram bot using proxy", "proxy", proxyURL.Host)
+	}
+	b, err := bot.New(config.TelegramToken(), botOpts...)
 	if err != nil {
 		panic(err)
 	}
@@ -337,7 +351,7 @@ func checkYookasaInvoice(
 		if err != nil {
 			slog.Error("Error parsing purchaseId", "invoiceId", invoice.ID, "error", err)
 		}
-		ctxWithValue := context.WithValue(ctx, "username", invoice.Metadata["username"])
+		ctxWithValue := context.WithValue(ctx, remnawave.CtxKeyUsername, invoice.Metadata["username"])
 		err = paymentService.ProcessPurchaseById(ctxWithValue, int64(purchaseId))
 		if err != nil {
 			slog.Error("Error processing invoice", "invoiceId", invoice.ID, "purchaseId", purchaseId, "error", err)
@@ -391,7 +405,7 @@ func checkCryptoPayInvoice(
 			payload := strings.Split(invoice.Payload, "&")
 			purchaseID, err := strconv.Atoi(strings.Split(payload[0], "=")[1])
 			username := strings.Split(payload[1], "=")[1]
-			ctxWithUsername := context.WithValue(ctx, "username", username)
+			ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, username)
 			err = paymentService.ProcessPurchaseById(ctxWithUsername, int64(purchaseID))
 			if err != nil {
 				slog.Error("Error processing invoice", "invoiceId", invoice.InvoiceID, "error", err)
