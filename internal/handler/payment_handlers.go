@@ -13,6 +13,7 @@ import (
 
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
+	"remnawave-tg-shop-bot/internal/remnawave"
 )
 
 func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -179,7 +180,7 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 
-	ctxWithUsername := context.WithValue(ctx, "username", update.CallbackQuery.From.Username)
+	ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, update.CallbackQuery.From.Username)
 	paymentURL, purchaseId, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
 	if err != nil {
 		slog.Error("Error creating payment", "error", err)
@@ -226,7 +227,7 @@ func (h Handler) SuccessPaymentHandler(ctx context.Context, b *bot.Bot, update *
 		return
 	}
 
-	ctxWithUsername := context.WithValue(ctx, "username", username)
+	ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, username)
 	err = h.paymentService.ProcessPurchaseById(ctxWithUsername, int64(purchaseId))
 	if err != nil {
 		slog.Error("Error processing purchase", "error", err)
