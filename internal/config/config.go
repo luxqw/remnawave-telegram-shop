@@ -372,8 +372,18 @@ func InitConfig() {
 
 	conf.trialRemnawaveTag = envStringDefault("TRIAL_REMNAWAVE_TAG", "")
 
-	conf.trialTrafficLimitResetStrategy = envStringDefault("TRIAL_TRAFFIC_LIMIT_RESET_STRATEGY", "MONTH")
-	conf.trafficLimitResetStrategy = envStringDefault("TRAFFIC_LIMIT_RESET_STRATEGY", "MONTH")
+	conf.trialTrafficLimitResetStrategy = strings.ToUpper(envStringDefault("TRIAL_TRAFFIC_LIMIT_RESET_STRATEGY", "MONTH_ROLLING"))
+	conf.trafficLimitResetStrategy = strings.ToUpper(envStringDefault("TRAFFIC_LIMIT_RESET_STRATEGY", "MONTH_ROLLING"))
+
+	validStrategies := map[string]bool{
+		"DAY": true, "WEEK": true, "MONTH": true, "MONTH_ROLLING": true, "NO_RESET": true,
+	}
+	if !validStrategies[conf.trafficLimitResetStrategy] {
+		panic(fmt.Sprintf("invalid TRAFFIC_LIMIT_RESET_STRATEGY: %q. Allowed: DAY, WEEK, MONTH, MONTH_ROLLING, NO_RESET", conf.trafficLimitResetStrategy))
+	}
+	if !validStrategies[conf.trialTrafficLimitResetStrategy] {
+		panic(fmt.Sprintf("invalid TRIAL_TRAFFIC_LIMIT_RESET_STRATEGY: %q. Allowed: DAY, WEEK, MONTH, MONTH_ROLLING, NO_RESET", conf.trialTrafficLimitResetStrategy))
+	}
 
 	conf.defaultLanguage = envStringDefault("DEFAULT_LANGUAGE", "ru")
 

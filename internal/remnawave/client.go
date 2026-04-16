@@ -216,6 +216,27 @@ func filterSquadsBySelection(allSquads []internalSquadItem, selected map[uuid.UU
 }
 
 // ---------------------------------------------------------------------------
+// GetUsersByTelegramID — public wrapper
+// ---------------------------------------------------------------------------
+
+func (r *Client) GetUsersByTelegramID(ctx context.Context, telegramID int64) ([]User, error) {
+	return r.getUsersByTelegramID(ctx, telegramID)
+}
+
+// ---------------------------------------------------------------------------
+// UpdateUserStrategy — minimal PATCH to update only trafficLimitStrategy
+// ---------------------------------------------------------------------------
+
+func (r *Client) UpdateUserStrategy(ctx context.Context, userUUID uuid.UUID, strategy string) error {
+	req := &UpdateUserRequest{
+		UUID:                 &userUUID,
+		TrafficLimitStrategy: normalizeStrategy(strategy),
+	}
+	var resp apiResponse[User]
+	return r.doJSON(ctx, http.MethodPatch, "/api/users", req, &resp)
+}
+
+// ---------------------------------------------------------------------------
 // DecreaseSubscription
 // ---------------------------------------------------------------------------
 
@@ -409,7 +430,7 @@ func getNewExpire(daysToAdd int, currentExpire time.Time) time.Time {
 func normalizeStrategy(s string) string {
 	upper := strings.ToUpper(s)
 	switch upper {
-	case "DAY", "WEEK", "NO_RESET", "MONTH":
+	case "DAY", "WEEK", "NO_RESET", "MONTH", "MONTH_ROLLING":
 		return upper
 	default:
 		return "MONTH"

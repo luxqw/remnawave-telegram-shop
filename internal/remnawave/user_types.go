@@ -8,13 +8,14 @@ import (
 
 // User represents a Remnawave user.
 type User struct {
-	UUID              uuid.UUID `json:"uuid"`
-	Username          string    `json:"username"`
-	SubscriptionUrl   string    `json:"subscriptionUrl"`
-	ExpireAt          time.Time `json:"expireAt"`
-	TelegramID        *int64    `json:"telegramId"`
-	Status            string    `json:"status"`
-	TrafficLimitBytes int       `json:"trafficLimitBytes"`
+	UUID                 uuid.UUID `json:"uuid"`
+	Username             string    `json:"username"`
+	SubscriptionUrl      string    `json:"subscriptionUrl"`
+	ExpireAt             time.Time `json:"expireAt"`
+	TelegramID           *int64    `json:"telegramId"`
+	Status               string    `json:"status"`
+	TrafficLimitBytes    int       `json:"trafficLimitBytes"`
+	TrafficLimitStrategy string    `json:"trafficLimitStrategy"`
 }
 
 // getAllUsersResponse is the raw API response for GET /api/users.
