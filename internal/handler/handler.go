@@ -22,6 +22,7 @@ type Handler struct {
 	referralRepository *database.ReferralRepository
 	cache              *cache.Cache
 	remnawaveClient    *remnawave.Client
+	topupRepository    *database.TrafficTopupRepository
 }
 
 func NewHandler(
@@ -35,6 +36,7 @@ func NewHandler(
 	referralRepository *database.ReferralRepository,
 	cache *cache.Cache,
 	remnawaveClient *remnawave.Client,
+	topupRepository *database.TrafficTopupRepository,
 ) *Handler {
 	return &Handler{
 		syncService:        syncService,
@@ -47,5 +49,6 @@ func NewHandler(
 		referralRepository: referralRepository,
 		cache:              cache,
 		remnawaveClient:    remnawaveClient,
+		topupRepository:    topupRepository,
 	}
 }

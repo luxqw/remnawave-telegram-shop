@@ -156,6 +156,12 @@ func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCod
 		inlineKeyboard = append(inlineKeyboard, h.resolveConnectButton(langCode))
 	}
 
+	if config.TopupEnabled() && existingCustomer.SubscriptionLink != nil {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			h.translation.GetButton(langCode, "topup_button").InlineCallback(CallbackTopup),
+		})
+	}
+
 	if config.GetReferralDays() > 0 {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "referral_button").InlineCallback(CallbackReferral)})
 	}

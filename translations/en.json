@@ -106,5 +106,16 @@
     "emoji_id": "5258165702707125574"
   },
   "tribute_cancelled": "Tribute cancelled",
-  "access_denied": "⚠️ Access denied. Please update your profile information."
+  "access_denied": "⚠️ Access denied. Please update your profile information.",
+  "topup_button": {
+    "text": "Buy traffic",
+    "emoji_id": "5372981976804366741"
+  },
+  "topup_select_package": "Select a traffic package:",
+  "topup_disclaimer": "⚠️ Additional <b>%d GB</b> will be available until the next traffic reset.\nAfter reset, the limit returns to the base value.\n\nClick the button below to pay via Tribute:",
+  "topup_pending_warning": "⏳ You have a pending payment.\nPlease wait for it to complete or cancel it.",
+  "topup_cancel_button": {
+    "text": "Cancel and start over",
+    "emoji_id": "6039539366177541657"
+  }
 }
