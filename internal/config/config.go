@@ -12,6 +12,15 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// TopupPackageConfig holds configuration for a single traffic top-up package.
+type TopupPackageConfig struct {
+	GBAmount       int
+	Price          int
+	Currency       string
+	URL            string
+	SubscriptionID int
+}
+
 type config struct {
 	telegramToken                                             string
 	price1, price3, price6, price12                           int
@@ -53,6 +62,11 @@ type config struct {
 	remnawaveHeaders                                          map[string]string
 	trialTrafficLimitResetStrategy                            string
 	trafficLimitResetStrategy                                 string
+	topupEnabled                                              bool
+	topupPackage10                                            TopupPackageConfig
+	topupPackage25                                            TopupPackageConfig
+	topupPackage50                                            TopupPackageConfig
+	topupPackages                                             map[int]TopupPackageConfig
 }
 
 var conf config
@@ -288,7 +302,31 @@ func TrafficLimitResetStrategy() string {
 	return conf.trafficLimitResetStrategy
 }
 
+func TopupEnabled() bool {
+	return conf.topupEnabled
+}
+
+func AllTopupPackages() []TopupPackageConfig {
+	return []TopupPackageConfig{conf.topupPackage10, conf.topupPackage25, conf.topupPackage50}
+}
+
+func TopupPackageBySubscriptionID(id int) (TopupPackageConfig, bool) {
+	pkg, ok := conf.topupPackages[id]
+	return pkg, ok
+}
+
+func TopupPackageByGB(gb int) *TopupPackageConfig {
+	for _, pkg := range []TopupPackageConfig{conf.topupPackage10, conf.topupPackage25, conf.topupPackage50} {
+		if pkg.GBAmount == gb {
+			return &pkg
+		}
+	}
+	return nil
+}
+
 const bytesInGigabyte = 1073741824
+
+func BytesInGigabyte() int { return bytesInGigabyte }
 
 func MoynalogUrl() string {
 	return conf.moynalogURL
@@ -593,5 +631,48 @@ func InitConfig() {
 		conf.moynalogURL = envStringDefault("MOYNALOG_URL", "https://moynalog.ru/api/v1")
 		conf.moynalogUsername = mustEnv("MOYNALOG_USERNAME")
 		conf.moynalogPassword = mustEnv("MOYNALOG_PASSWORD")
+	}
+
+	conf.topupEnabled = envBool("TOPUP_ENABLED")
+	if conf.topupEnabled {
+		currency := envStringDefault("TOPUP_PRICE_CURRENCY", "₽")
+		conf.topupPackage10 = parseTopupPackage("10", currency)
+		conf.topupPackage25 = parseTopupPackage("25", currency)
+		conf.topupPackage50 = parseTopupPackage("50", currency)
+
+		if conf.topupPackage10.URL == "" || conf.topupPackage25.URL == "" || conf.topupPackage50.URL == "" {
+			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_URL not set")
+		}
+		if conf.topupPackage10.Price == 0 || conf.topupPackage25.Price == 0 || conf.topupPackage50.Price == 0 {
+			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_PRICE not set")
+		}
+		if conf.topupPackage10.SubscriptionID == 0 || conf.topupPackage25.SubscriptionID == 0 || conf.topupPackage50.SubscriptionID == 0 {
+			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_ID not set (create products in Tribute first)")
+		}
+
+		conf.topupPackages = map[int]TopupPackageConfig{
+			conf.topupPackage10.SubscriptionID: conf.topupPackage10,
+			conf.topupPackage25.SubscriptionID: conf.topupPackage25,
+			conf.topupPackage50.SubscriptionID: conf.topupPackage50,
+		}
+	}
+}
+
+func parseTopupPackage(gb string, currency string) TopupPackageConfig {
+	gbInt := 0
+	switch gb {
+	case "10":
+		gbInt = 10
+	case "25":
+		gbInt = 25
+	case "50":
+		gbInt = 50
+	}
+	return TopupPackageConfig{
+		GBAmount:       gbInt,
+		Price:          envIntDefault("TOPUP_PACKAGE_"+gb+"GB_PRICE", 0),
+		Currency:       currency,
+		URL:            envStringDefault("TOPUP_PACKAGE_"+gb+"GB_URL", ""),
+		SubscriptionID: envIntDefault("TOPUP_PACKAGE_"+gb+"GB_ID", 0),
 	}
 }
