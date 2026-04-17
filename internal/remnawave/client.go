@@ -224,6 +224,21 @@ func (r *Client) GetUsersByTelegramID(ctx context.Context, telegramID int64) ([]
 }
 
 // ---------------------------------------------------------------------------
+// UpdateUserTrafficLimit — PATCH trafficLimitBytes + strategy, keeps all other fields
+// ---------------------------------------------------------------------------
+
+func (r *Client) UpdateUserTrafficLimit(ctx context.Context, userUUID uuid.UUID, newLimitBytes int, strategy string) error {
+	req := &UpdateUserRequest{
+		UUID:                 &userUUID,
+		Status:               "ACTIVE",
+		TrafficLimitBytes:    &newLimitBytes,
+		TrafficLimitStrategy: normalizeStrategy(strategy),
+	}
+	var resp apiResponse[User]
+	return r.doJSON(ctx, http.MethodPatch, "/api/users", req, &resp)
+}
+
+// ---------------------------------------------------------------------------
 // UpdateUserStrategy — minimal PATCH to update only trafficLimitStrategy
 // ---------------------------------------------------------------------------
 

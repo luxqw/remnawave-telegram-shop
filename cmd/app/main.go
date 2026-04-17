@@ -76,6 +76,7 @@ func main() {
 	customerRepository := database.NewCustomerRepository(pool)
 	purchaseRepository := database.NewPurchaseRepository(pool)
 	referralRepository := database.NewReferralRepository(pool)
+	topupRepository := database.NewTrafficTopupRepository(pool)
 
 	cryptoPayClient := cryptopay.NewCryptoPayClient(config.CryptoPayUrl(), config.CryptoPayToken())
 	remnawaveClient := remnawave.NewClient(config.RemnawaveUrl(), config.RemnawaveToken(), config.RemnawaveMode())
@@ -112,9 +113,13 @@ func main() {
 	subscriptionNotificationCronScheduler.Start()
 	defer subscriptionNotificationCronScheduler.Stop()
 
+	topupCleanupCron := setupTopupCleanup(topupRepository)
+	topupCleanupCron.Start()
+	defer topupCleanupCron.Stop()
+
 	syncService := sync.NewSyncService(remnawaveClient, customerRepository)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient)
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
@@ -159,6 +164,9 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackStart, bot.MatchTypeExact, h.StartCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackSell, bot.MatchTypePrefix, h.SellCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackConnect, bot.MatchTypeExact, h.ConnectCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopup, bot.MatchTypeExact, h.TopupCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopupSelect, bot.MatchTypePrefix, h.TopupSelectCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopupCancel, bot.MatchTypePrefix, h.TopupCancelCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackPayment, bot.MatchTypePrefix, h.PaymentCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
 		return update.PreCheckoutQuery != nil
@@ -171,7 +179,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/healthcheck", fullHealthHandler(pool, remnawaveClient))
 	if config.GetTributeWebHookUrl() != "" {
-		tributeHandler := tribute.NewClient(paymentService, customerRepository)
+		tributeHandler := tribute.NewClient(paymentService, customerRepository, topupRepository, remnawaveClient, b)
 		mux.Handle(config.GetTributeWebHookUrl(), tributeHandler.WebHookHandler())
 	}
 
@@ -271,6 +279,26 @@ func initDatabase(ctx context.Context, connString string) (*pgxpool.Pool, error)
 	config.MinConns = 5
 
 	return pgxpool.ConnectConfig(ctx, config)
+}
+
+func setupTopupCleanup(topupRepository *database.TrafficTopupRepository) *cron.Cron {
+	c := cron.New()
+	_, err := c.AddFunc("0 * * * *", func() { // every hour
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		n, err := topupRepository.ExpireOldPending(ctx, 2*time.Hour)
+		if err != nil {
+			slog.Error("topup cleanup: expire old pending", "error", err)
+			return
+		}
+		if n > 0 {
+			slog.Info("topup cleanup: expired stale pending records", "count", n)
+		}
+	})
+	if err != nil {
+		panic(err)
+	}
+	return c
 }
 
 func setupInvoiceChecker(

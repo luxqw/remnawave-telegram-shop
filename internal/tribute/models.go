@@ -1,6 +1,11 @@
 package tribute
 
-import "time"
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type SubscriptionWebhook struct {
 	Name      string    `json:"name"`
@@ -22,4 +27,12 @@ type Payload struct {
 	ChannelID        int       `json:"channel_id"`
 	ChannelName      string    `json:"channel_name"`
 	ExpiresAt        time.Time `json:"expires_at"`
+}
+
+func parseUUID(s string) (uuid.UUID, error) {
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("parse uuid %q: %w", s, err)
+	}
+	return u, nil
 }
