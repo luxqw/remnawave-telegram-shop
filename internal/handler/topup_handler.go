@@ -64,18 +64,16 @@ func (h Handler) TopupSelectCallbackHandler(ctx context.Context, b *bot.Bot, upd
 
 	// Create pending record before showing the payment URL.
 	_, err = h.topupRepository.Create(ctx, &database.TrafficTopup{
-		TelegramID:  telegramID,
-		GBAmount:    gb,
-		PriceAmount: float64(pkg.Price),
-		Currency:    pkg.Currency,
-		Status:      database.TopupStatusPending,
+		TelegramID: telegramID,
+		GBAmount:   gb,
+		Status:     database.TopupStatusPending,
 	})
 	if err != nil {
 		slog.Error("topup select: create pending record", "error", err)
 	}
 
 	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb)
-	btnLabel := fmt.Sprintf("+%d ГБ — %d%s", pkg.GBAmount, pkg.Price, pkg.Currency)
+	btnLabel := fmt.Sprintf("+%d ГБ", pkg.GBAmount)
 
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    msg.Chat.ID,
@@ -111,7 +109,7 @@ func (h Handler) showTopupPackages(ctx context.Context, b *bot.Bot, chatID int64
 	packages := config.AllTopupPackages()
 	var rows [][]models.InlineKeyboardButton
 	for _, pkg := range packages {
-		label := fmt.Sprintf("+%d ГБ — %d%s", pkg.GBAmount, pkg.Price, pkg.Currency)
+		label := fmt.Sprintf("+%d ГБ", pkg.GBAmount)
 		rows = append(rows, []models.InlineKeyboardButton{
 			{
 				Text:         label,

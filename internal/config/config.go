@@ -15,8 +15,6 @@ import (
 // TopupPackageConfig holds configuration for a single traffic top-up package.
 type TopupPackageConfig struct {
 	GBAmount  int
-	Price     int
-	Currency  string
 	URL       string
 	ProductID int
 }
@@ -635,16 +633,12 @@ func InitConfig() {
 
 	conf.topupEnabled = envBool("TOPUP_ENABLED")
 	if conf.topupEnabled {
-		currency := envStringDefault("TOPUP_PRICE_CURRENCY", "₽")
-		conf.topupPackage10 = parseTopupPackage("10", currency)
-		conf.topupPackage25 = parseTopupPackage("25", currency)
-		conf.topupPackage50 = parseTopupPackage("50", currency)
+		conf.topupPackage10 = parseTopupPackage("10")
+		conf.topupPackage25 = parseTopupPackage("25")
+		conf.topupPackage50 = parseTopupPackage("50")
 
 		if conf.topupPackage10.URL == "" || conf.topupPackage25.URL == "" || conf.topupPackage50.URL == "" {
 			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_URL not set")
-		}
-		if conf.topupPackage10.Price == 0 || conf.topupPackage25.Price == 0 || conf.topupPackage50.Price == 0 {
-			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_PRICE not set")
 		}
 		if conf.topupPackage10.ProductID == 0 || conf.topupPackage25.ProductID == 0 || conf.topupPackage50.ProductID == 0 {
 			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_ID not set (create Digital Products in Tribute first)")
@@ -658,7 +652,7 @@ func InitConfig() {
 	}
 }
 
-func parseTopupPackage(gb string, currency string) TopupPackageConfig {
+func parseTopupPackage(gb string) TopupPackageConfig {
 	gbInt := 0
 	switch gb {
 	case "10":
@@ -670,8 +664,6 @@ func parseTopupPackage(gb string, currency string) TopupPackageConfig {
 	}
 	return TopupPackageConfig{
 		GBAmount:  gbInt,
-		Price:     envIntDefault("TOPUP_PACKAGE_"+gb+"GB_PRICE", 0),
-		Currency:  currency,
 		URL:       envStringDefault("TOPUP_PACKAGE_"+gb+"GB_URL", ""),
 		ProductID: envIntDefault("TOPUP_PACKAGE_"+gb+"GB_ID", 0),
 	}
