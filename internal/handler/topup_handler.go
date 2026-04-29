@@ -88,7 +88,6 @@ func (h Handler) TopupSelectCallbackHandler(ctx context.Context, b *bot.Bot, upd
 }
 
 func (h Handler) TopupCancelCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	telegramID := update.CallbackQuery.From.ID
 	langCode := update.CallbackQuery.From.LanguageCode
 	msg := update.CallbackQuery.Message.Message
 
