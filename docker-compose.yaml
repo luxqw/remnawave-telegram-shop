@@ -1,6 +1,9 @@
 services:
   bot:
-    image: ghcr.io/jolymmiels/remnawave-telegram-shop-bot:latest
+    #image: ghcr.io/jolymmiels/remnawave-telegram-shop-bot:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     env_file:
       - .env
     depends_on:
@@ -8,6 +11,9 @@ services:
         condition: service_healthy
     volumes:
       - ./translations:/translations
+    networks:
+      - default
+      - remnawave-network
 
   db:
     image: postgres:17
@@ -31,18 +37,24 @@ services:
       timeout: 10s
       retries: 3
 
-#  ngrok:
-#    image: ngrok/ngrok:latest
-#    command:
-#      - "http"
-#      - "http://bot:8080"
-#    environment:
-#      NGROK_AUTHTOKEN: TOKEN
-#    ports:
-#      - 4040:4040
+  ngrok:
+    image: ngrok/ngrok:latest
+    command:
+      - "http"
+      - "http://bot:8080"
+      - "--domain=relaxing-lemur-pleasantly.ngrok-free.app"
+    environment:
+      NGROK_AUTHTOKEN: 2zgp8UoZS4pcvb777sRjQROD7Cv_2L81bCpNSR3CaRQ4NHpjK
+    ports:
+      - 4040:4040
 
 volumes:
   remnawave-telegram-shop-db-data:
     driver: local
     external: false
     name: remnawave-telegram-shop-db-data
+
+networks:
+  default: {}
+  remnawave-network:
+    external: true
