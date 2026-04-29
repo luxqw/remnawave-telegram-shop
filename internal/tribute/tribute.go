@@ -35,6 +35,7 @@ type Client struct {
 const (
 	CancelledSubscription = "cancelled_subscription"
 	NewSubscription       = "new_subscription"
+	NewDigitalProduct     = "new_digital_product"
 	TestHook              = ""
 )
 
@@ -91,12 +92,11 @@ func (c *Client) WebHookHandler() http.Handler {
 		}
 
 		switch wh.Name {
-		case NewSubscription:
-			// Check if this is a top-up payment (identified by subscription_id).
+		case NewDigitalProduct:
 			if config.TopupEnabled() {
-				if pkg, ok := config.TopupPackageBySubscriptionID(wh.Payload.SubscriptionID); ok {
+				if pkg, ok := config.TopupPackageByProductID(wh.Payload.ProductID); ok {
 					if err := c.handleTopupPayment(ctx, wh, pkg); err != nil {
-						slog.Error("webhook: topup payment error", "error", err, "subscription_id", wh.Payload.SubscriptionID)
+						slog.Error("webhook: topup payment error", "error", err, "product_id", wh.Payload.ProductID)
 						http.Error(w, "internal server error", http.StatusInternalServerError)
 						return
 					}
@@ -104,7 +104,8 @@ func (c *Client) WebHookHandler() http.Handler {
 					return
 				}
 			}
-			// Regular subscription flow.
+			slog.Warn("webhook: unknown digital product", "product_id", wh.Payload.ProductID)
+		case NewSubscription:
 			if err := c.newSubscriptionHandler(ctx, wh); err != nil {
 				slog.Error("webhook: new subscription error", "error", err, "payload", string(body))
 				http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -153,7 +154,7 @@ func (c *Client) newSubscriptionHandler(ctx context.Context, wh SubscriptionWebh
 
 func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook, pkg config.TopupPackageConfig) error {
 	telegramID := wh.Payload.TelegramUserID
-	tributePaymentID := strconv.Itoa(wh.Payload.PeriodID)
+	tributePaymentID := strconv.Itoa(wh.Payload.PurchaseID)
 	gbAmount := pkg.GBAmount
 
 	// Idempotency check: if already completed, return OK.
@@ -190,13 +191,13 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 		// Create completed record so webhook isn't retried.
 		payID := tributePaymentID
 		_, _ = c.topupRepository.Create(ctx, &database.TrafficTopup{
-			TelegramID:  telegramID,
-			RemnawaveUUID: rwUser.UUID.String(),
-			GBAmount:    gbAmount,
-			PriceAmount: float64(pkg.Price),
-			Currency:    pkg.Currency,
+			TelegramID:       telegramID,
+			RemnawaveUUID:    rwUser.UUID.String(),
+			GBAmount:         gbAmount,
+			PriceAmount:      float64(wh.Payload.Amount),
+			Currency:         wh.Payload.Currency,
 			TributePaymentID: &payID,
-			Status:      database.TopupStatusCompleted,
+			Status:           database.TopupStatusCompleted,
 		})
 		return nil
 	}
@@ -234,8 +235,8 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 				TelegramID:              telegramID,
 				RemnawaveUUID:           remnaUUID,
 				GBAmount:                gbAmount,
-				PriceAmount:             float64(pkg.Price),
-				Currency:                pkg.Currency,
+				PriceAmount:             float64(wh.Payload.Amount),
+				Currency:                wh.Payload.Currency,
 				TributePaymentID:        &payID,
 				TargetTrafficLimitBytes: &tb,
 				Status:                  database.TopupStatusProcessing,

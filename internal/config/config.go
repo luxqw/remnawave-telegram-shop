@@ -14,11 +14,11 @@ import (
 
 // TopupPackageConfig holds configuration for a single traffic top-up package.
 type TopupPackageConfig struct {
-	GBAmount       int
-	Price          int
-	Currency       string
-	URL            string
-	SubscriptionID int
+	GBAmount  int
+	Price     int
+	Currency  string
+	URL       string
+	ProductID int
 }
 
 type config struct {
@@ -310,7 +310,7 @@ func AllTopupPackages() []TopupPackageConfig {
 	return []TopupPackageConfig{conf.topupPackage10, conf.topupPackage25, conf.topupPackage50}
 }
 
-func TopupPackageBySubscriptionID(id int) (TopupPackageConfig, bool) {
+func TopupPackageByProductID(id int) (TopupPackageConfig, bool) {
 	pkg, ok := conf.topupPackages[id]
 	return pkg, ok
 }
@@ -646,14 +646,14 @@ func InitConfig() {
 		if conf.topupPackage10.Price == 0 || conf.topupPackage25.Price == 0 || conf.topupPackage50.Price == 0 {
 			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_PRICE not set")
 		}
-		if conf.topupPackage10.SubscriptionID == 0 || conf.topupPackage25.SubscriptionID == 0 || conf.topupPackage50.SubscriptionID == 0 {
-			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_ID not set (create products in Tribute first)")
+		if conf.topupPackage10.ProductID == 0 || conf.topupPackage25.ProductID == 0 || conf.topupPackage50.ProductID == 0 {
+			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_ID not set (create Digital Products in Tribute first)")
 		}
 
 		conf.topupPackages = map[int]TopupPackageConfig{
-			conf.topupPackage10.SubscriptionID: conf.topupPackage10,
-			conf.topupPackage25.SubscriptionID: conf.topupPackage25,
-			conf.topupPackage50.SubscriptionID: conf.topupPackage50,
+			conf.topupPackage10.ProductID: conf.topupPackage10,
+			conf.topupPackage25.ProductID: conf.topupPackage25,
+			conf.topupPackage50.ProductID: conf.topupPackage50,
 		}
 	}
 }
@@ -669,10 +669,10 @@ func parseTopupPackage(gb string, currency string) TopupPackageConfig {
 		gbInt = 50
 	}
 	return TopupPackageConfig{
-		GBAmount:       gbInt,
-		Price:          envIntDefault("TOPUP_PACKAGE_"+gb+"GB_PRICE", 0),
-		Currency:       currency,
-		URL:            envStringDefault("TOPUP_PACKAGE_"+gb+"GB_URL", ""),
-		SubscriptionID: envIntDefault("TOPUP_PACKAGE_"+gb+"GB_ID", 0),
+		GBAmount:  gbInt,
+		Price:     envIntDefault("TOPUP_PACKAGE_"+gb+"GB_PRICE", 0),
+		Currency:  currency,
+		URL:       envStringDefault("TOPUP_PACKAGE_"+gb+"GB_URL", ""),
+		ProductID: envIntDefault("TOPUP_PACKAGE_"+gb+"GB_ID", 0),
 	}
 }
