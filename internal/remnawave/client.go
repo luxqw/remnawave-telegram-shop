@@ -1,4 +1,4 @@
-package remnawave
+﻿package remnawave
 
 import (
 	"bytes"
@@ -419,10 +419,6 @@ func (r *Client) createUser(ctx context.Context, customerId int64, telegramId in
 	return &resp.Response, nil
 }
 
-// ---------------------------------------------------------------------------
-// Utility functions
-// ---------------------------------------------------------------------------
-
 
 // ---------------------------------------------------------------------------
 // DeleteUser
@@ -463,6 +459,14 @@ func (r *Client) ResetSubscription(ctx context.Context, customerId int64, telegr
 	}
 	return newUser, nil
 }
+// ---------------------------------------------------------------------------
+// Utility functions
+// ---------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------
+// DeleteUser
+// ---------------------------------------------------------------------------
 
 func generateUsername(customerId int64, telegramId int64) string {
 	return fmt.Sprintf("%d_%d", customerId, telegramId)
@@ -492,4 +496,5 @@ func normalizeStrategy(s string) string {
 		return "MONTH"
 	}
 }
+
 

@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -162,6 +162,10 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/connect", bot.MatchTypeExact, h.ConnectCommandHandler, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/sync", bot.MatchTypeExact, h.SyncUsersCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/fix_traffic_strategy", bot.MatchTypePrefix, h.FixTrafficStrategyCommandHandler, isAdminMiddleware)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_user", bot.MatchTypePrefix, h.AdminUserCommandHandler, isAdminMiddleware)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_topup", bot.MatchTypePrefix, h.AdminTopupCommandHandler, isAdminMiddleware)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_reset_devices", bot.MatchTypePrefix, h.AdminResetDevicesCommandHandler, isAdminMiddleware)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_broadcast", bot.MatchTypePrefix, h.AdminBroadcastCommandHandler, isAdminMiddleware)
 
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackReferral, bot.MatchTypeExact, h.ReferralCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBuy, bot.MatchTypeExact, h.BuyCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
