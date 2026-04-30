@@ -135,12 +135,12 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 }
 
 // fetchResetInfo fetches traffic strategy and last reset time from Remnawave.
-// Returns empty values on failure — callers handle gracefully (no reset shown).
-func (h Handler) fetchResetInfo(ctx context.Context, customer *database.Customer) (resetStrategy string, lastResetAt *time.Time) {
+// Uses a fresh context so parent timeout doesn't race with DB calls.
+func (h Handler) fetchResetInfo(_ context.Context, customer *database.Customer) (resetStrategy string, lastResetAt *time.Time) {
 	if customer.SubscriptionLink == nil || customer.ExpireAt == nil || !customer.ExpireAt.After(time.Now()) {
 		return
 	}
-	rwCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	rwCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(rwCtx, customer.TelegramID)
 	if err == nil && len(rwUsers) > 0 {

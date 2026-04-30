@@ -48,10 +48,8 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 		devices = nil
 	}
 
-	expireDate := expireAt.Format("02.01.2006")
-
 	if len(devices) == 0 {
-		text := fmt.Sprintf("📱 <b>Мои устройства</b>\n\n📅 Подписка до: <b>%s</b>\n\nНет подключённых устройств.\nПодключите устройство через кнопку «Подключиться».", expireDate)
+		text := "📱 <b>Мои устройства</b>\n\nНет подключённых устройств.\nПодключите устройство через кнопку «Подключиться»."
 		var rows [][]models.InlineKeyboardButton
 		if config.GetMiniAppURL() != "" {
 			rows = append(rows, []models.InlineKeyboardButton{
@@ -66,9 +64,9 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 		return
 	}
 
-	// Build message with device list as text
+	// Build device list (subscription info is already in /start greeting — no need to repeat)
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📱 <b>Мои устройства</b>\n\n📅 Подписка до: <b>%s</b>\nПодключено: <b>%d</b>\n\n", expireDate, len(devices)))
+	sb.WriteString(fmt.Sprintf("📱 <b>Мои устройства</b>\n\nПодключено: <b>%d</b>\n\n", len(devices)))
 	for i, d := range devices {
 		sb.WriteString(fmt.Sprintf("<b>%d.</b> %s\n", i+1, buildDeviceDescription(i, d)))
 	}
