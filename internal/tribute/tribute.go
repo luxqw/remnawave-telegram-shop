@@ -1,4 +1,4 @@
-package tribute
+﻿package tribute
 
 import (
 	"context"
@@ -173,7 +173,7 @@ func (c *Client) newSubscriptionHandler(ctx context.Context, wh SubscriptionWebh
 		return fmt.Errorf("failed to find customer: %w", err)
 	}
 	if customer == nil {
-		return fmt.Errorf("customer not found for telegram_id: %d", wh.Payload.TelegramUserID)
+		return fmt.Errorf("newSubscription: %w", payment.ErrCustomerNotFound)
 	}
 	_, purchaseId, err := c.paymentService.CreatePurchase(ctx, float64(wh.Payload.Amount), months, customer, database.InvoiceTypeTribute)
 	if err != nil {

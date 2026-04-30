@@ -1,15 +1,15 @@
-﻿package handler
+package handler
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 	"strings"
+	"strconv"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/google/uuid"
 
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/remnawave"
@@ -25,17 +25,15 @@ func (h Handler) DevicesCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 
-	h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, customer.TelegramID, *customer.ExpireAt, true)
+	h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, customer.TelegramID, *customer.ExpireAt)
 }
 
-func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string, telegramID int64, expireAt time.Time, isEdit bool) {
+func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string, telegramID int64, expireAt time.Time) {
 	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, telegramID)
 	if err != nil || len(rwUsers) == 0 {
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-			ChatID:    chatID,
-			MessageID: messageID,
-			ParseMode: models.ParseModeHTML,
-			Text:      h.translation.GetText(langCode, "devices_error"),
+			ChatID: chatID, MessageID: messageID, ParseMode: models.ParseModeHTML,
+			Text: h.translation.GetText(langCode, "devices_error"),
 			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
 				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
 			}},
@@ -63,22 +61,19 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 		rows = append(rows, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID: chatID, MessageID: messageID, ParseMode: models.ParseModeHTML,
-			Text:        text,
-			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
+			Text: text, ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
 		})
 		return
 	}
 
 	text := fmt.Sprintf(h.translation.GetText(langCode, "devices_list_header"), expireDate, len(devices))
-	for _, d := range devices {
+	for i, d := range devices {
 		label := buildDeviceLabel(d)
-		callbackData := fmt.Sprintf("%s?u=%s&h=%s", CallbackDevicesDeleteDevice, rwUser.UUID.String(), d.Hwid)
-		if len(callbackData) > 64 {
-			callbackData = fmt.Sprintf("%s?u=%s&h=%s", CallbackDevicesDeleteDevice, rwUser.UUID.String(), d.Hwid[:20])
-		}
+		// Use index in callback data to avoid 64-byte Telegram limit on HWID strings
+		delCallback := fmt.Sprintf("%s?i=%d", CallbackDevicesDeleteDevice, i)
 		rows = append(rows, []models.InlineKeyboardButton{
 			{Text: label, CallbackData: "noop"},
-			{Text: "🗑️", CallbackData: callbackData},
+			{Text: "🗑️", CallbackData: delCallback},
 		})
 	}
 	rows = append(rows, []models.InlineKeyboardButton{
@@ -90,8 +85,7 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID: chatID, MessageID: messageID, ParseMode: models.ParseModeHTML,
-		Text:        text,
-		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
+		Text: text, ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
 	})
 }
 
@@ -101,29 +95,30 @@ func (h Handler) DevicesDeleteDeviceCallbackHandler(ctx context.Context, b *bot.
 	msg := update.CallbackQuery.Message.Message
 
 	cbData := parseCallbackData(update.CallbackQuery.Data)
-	userUUIDStr := cbData["u"]
-	hwid := cbData["h"]
-
-	if userUUIDStr == "" || hwid == "" {
-		return
-	}
-
-	userUUID, err := uuid.Parse(userUUIDStr)
+	idxStr := cbData["i"]
+	idx, err := strconv.Atoi(idxStr)
 	if err != nil {
 		return
 	}
 
-	// Find full hwid from device list (in case it was truncated)
-	devices, _ := h.remnawaveClient.GetUserHwidDevices(ctx, userUUID)
-	fullHwid := hwid
-	for _, d := range devices {
-		if strings.HasPrefix(d.Hwid, hwid) {
-			fullHwid = d.Hwid
-			break
-		}
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, telegramID)
+	if err != nil || len(rwUsers) == 0 {
+		return
+	}
+	rwUser := rwUsers[0]
+
+	// Fetch fresh device list - use index to identify device
+	devices, err := h.remnawaveClient.GetUserHwidDevices(ctx, rwUser.UUID)
+	if err != nil || idx >= len(devices) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: update.CallbackQuery.ID,
+			Text:            "❌ Устройство не найдено (список обновился)",
+		})
+		return
 	}
 
-	if err := h.remnawaveClient.DeleteUserHwidDevice(ctx, userUUID, fullHwid); err != nil {
+	hwid := devices[idx].Hwid
+	if err := h.remnawaveClient.DeleteUserHwidDevice(ctx, rwUser.UUID, hwid); err != nil {
 		slog.Error("devices: delete hwid device", "error", err)
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
@@ -139,9 +134,9 @@ func (h Handler) DevicesDeleteDeviceCallbackHandler(ctx context.Context, b *bot.
 
 	customer, _ := h.customerRepository.FindByTelegramId(ctx, telegramID)
 	if customer != nil && customer.ExpireAt != nil {
-		h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, telegramID, *customer.ExpireAt, true)
+		h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, telegramID, *customer.ExpireAt)
 	}
-	slog.Info("devices: deleted hwid device", "telegram_id", telegramID)
+	slog.Info("devices: deleted hwid device", "telegram_id", telegramID, "hwid_prefix", hwid[:min(8, len(hwid))])
 }
 
 func (h Handler) DevicesResetCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -149,10 +144,8 @@ func (h Handler) DevicesResetCallbackHandler(ctx context.Context, b *bot.Bot, up
 	msg := update.CallbackQuery.Message.Message
 
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    msg.Chat.ID,
-		MessageID: msg.ID,
-		ParseMode: models.ParseModeHTML,
-		Text:      h.translation.GetText(langCode, "devices_reset_confirm"),
+		ChatID: msg.Chat.ID, MessageID: msg.ID, ParseMode: models.ParseModeHTML,
+		Text: h.translation.GetText(langCode, "devices_reset_confirm"),
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
 			{h.translation.GetButton(langCode, "devices_reset_confirm_button").InlineCallback(CallbackDevicesResetConfirm)},
 			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackDevices)},
@@ -232,4 +225,11 @@ func formatTimeUntil(t time.Time) string {
 		return "сегодня"
 	}
 	return fmt.Sprintf("через %d дн.", days)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

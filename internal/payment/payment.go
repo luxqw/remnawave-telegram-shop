@@ -1,4 +1,4 @@
-package payment
+﻿package payment
 
 import (
 	"context"
@@ -409,7 +409,7 @@ func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (st
 	customerFilesToUpdate := map[string]interface{}{
 		"subscription_link": user.SubscriptionUrl,
 		"expire_at":         user.ExpireAt,
-		"is_trial":          false,
+		"is_trial":          true,
 	}
 
 	err = s.customerRepository.UpdateFields(ctx, customer.ID, customerFilesToUpdate)

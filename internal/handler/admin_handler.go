@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"remnawave-tg-shop-bot/internal/config"
+	"remnawave-tg-shop-bot/internal/database"
 )
 
 func (h Handler) AdminUserCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -106,20 +107,16 @@ func (h Handler) AdminResetDevicesCommandHandler(ctx context.Context, b *bot.Bot
 		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
 		return
 	}
-	customer, err := h.customerRepository.FindByTelegramId(ctx, targetID)
-	if err != nil || customer == nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("User %d not found", targetID))
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
+	if err != nil || len(rwUsers) == 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
 		return
 	}
-	newUser, err := h.remnawaveClient.ResetSubscription(ctx, customer.ID, customer.TelegramID, customer.IsTrial)
-	if err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Reset failed: %v", err))
+	if err := h.remnawaveClient.DeleteAllUserHwidDevices(ctx, rwUsers[0].UUID); err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Failed: %v", err))
 		return
 	}
-	if err := h.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{"subscription_link": newUser.SubscriptionUrl}); err != nil {
-		slog.Error("admin reset devices: update subscription link", "error", err)
-	}
-	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("✅ Устройства %d сброшены\n<code>%s</code>", targetID, newUser.SubscriptionUrl))
+	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("✅ Все устройства пользователя %d отключены (HWID очищен)", targetID))
 }
 
 func (h Handler) AdminBroadcastCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -165,6 +162,17 @@ func (h Handler) AdminBroadcastTestCommandHandler(ctx context.Context, b *bot.Bo
 	preview := "🧪 <b>Preview (только ты видишь это):</b>\n\n" + text
 	sendAdminReply(ctx, b, update.Message.Chat.ID, preview)
 }
+func countActive(customers []database.Customer) int {
+	now := time.Now()
+	n := 0
+	for _, c := range customers {
+		if c.ExpireAt != nil && c.ExpireAt.After(now) {
+			n++
+		}
+	}
+	return n
+}
+
 func sendAdminReply(ctx context.Context, b *bot.Bot, chatID int64, text string) {
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML})
 	if err != nil {
