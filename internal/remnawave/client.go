@@ -490,6 +490,28 @@ func (r *Client) DeleteAllUserHwidDevices(ctx context.Context, userUUID uuid.UUI
 	body := map[string]string{"userUuid": userUUID.String()}
 	return r.doJSON(ctx, http.MethodPost, "/api/hwid/devices/delete-all", body, nil)
 }
+
+// ---------------------------------------------------------------------------
+// SetUserStatus — PATCH to update only user status (ACTIVE / DISABLED)
+// ---------------------------------------------------------------------------
+
+func (r *Client) SetUserStatus(ctx context.Context, userUUID uuid.UUID, status string) error {
+	req := &UpdateUserRequest{
+		UUID:   &userUUID,
+		Status: status,
+	}
+	var resp apiResponse[User]
+	return r.doJSON(ctx, http.MethodPatch, "/api/users", req, &resp)
+}
+
+// ---------------------------------------------------------------------------
+// ResetUserTraffic — POST /api/users/{uuid}/actions/reset-traffic
+// ---------------------------------------------------------------------------
+
+func (r *Client) ResetUserTraffic(ctx context.Context, userUUID uuid.UUID) error {
+	_, _, err := r.doRequest(ctx, http.MethodPost, "/api/users/"+userUUID.String()+"/actions/reset-traffic", nil)
+	return err
+}
 func generateUsername(customerId int64, telegramId int64) string {
 	return fmt.Sprintf("%d_%d", customerId, telegramId)
 }

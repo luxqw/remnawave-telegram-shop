@@ -162,6 +162,151 @@ func (h Handler) AdminBroadcastTestCommandHandler(ctx context.Context, b *bot.Bo
 	preview := "🧪 <b>Preview (только ты видишь это):</b>\n\n" + text
 	sendAdminReply(ctx, b, update.Message.Chat.ID, preview)
 }
+
+func (h Handler) AdminExtendCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	parts := strings.Fields(update.Message.Text)
+	if len(parts) < 3 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_extend <telegram_id> <days>")
+		return
+	}
+	targetID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
+		return
+	}
+	days, err := strconv.Atoi(parts[2])
+	if err != nil || days <= 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid days (must be positive)")
+		return
+	}
+	customer, err := h.customerRepository.FindByTelegramId(ctx, targetID)
+	if err != nil || customer == nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("User %d not found", targetID))
+		return
+	}
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
+	if err != nil || len(rwUsers) == 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
+		return
+	}
+	newUser, err := h.remnawaveClient.CreateOrUpdateUser(ctx, customer.ID, customer.TelegramID, rwUsers[0].TrafficLimitBytes, days, customer.IsTrial)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave error: %v", err))
+		return
+	}
+	_ = h.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{
+		"expire_at":         newUser.ExpireAt,
+		"subscription_link": newUser.SubscriptionUrl,
+	})
+	expireDate := newUser.ExpireAt.Format("02.01.2006")
+	sendAdminReply(ctx, b, update.Message.Chat.ID,
+		fmt.Sprintf("Продлено на %d дн. для %d. Подписка до: %s", days, targetID, expireDate))
+	userText := fmt.Sprintf("Хорошие новости! Ваша подписка продлена на %d %s.\n\nАктивна до: %s", days, pluralDays(days), expireDate)
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: targetID, ParseMode: models.ParseModeHTML,
+		Text: "<b>" + userText + "</b>"})
+	slog.Info("admin extend", "telegram_id", targetID, "days", days)
+}
+
+func (h Handler) AdminDisableCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	h.setRemnawaveStatus(ctx, b, update, "DISABLED",
+		"<b>Доступ приостановлен.</b>\n\nВаш VPN временно отключён. Если это ошибка — обратитесь в поддержку.")
+}
+
+func (h Handler) AdminEnableCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	h.setRemnawaveStatus(ctx, b, update, "ACTIVE",
+		"<b>Доступ восстановлен!</b>\n\nВаш VPN снова активен. Приятного пользования!")
+}
+
+func (h Handler) setRemnawaveStatus(ctx context.Context, b *bot.Bot, update *models.Update, status, userMsg string) {
+	parts := strings.Fields(update.Message.Text)
+	if len(parts) < 2 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: "+parts[0]+" <telegram_id>")
+		return
+	}
+	targetID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
+		return
+	}
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
+	if err != nil || len(rwUsers) == 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
+		return
+	}
+	if err := h.remnawaveClient.SetUserStatus(ctx, rwUsers[0].UUID, status); err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Error: %v", err))
+		return
+	}
+	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("User %d -> %s", targetID, status))
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: targetID, ParseMode: models.ParseModeHTML, Text: userMsg})
+	slog.Info("admin set status", "telegram_id", targetID, "status", status)
+}
+
+func (h Handler) AdminResetTrafficCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	parts := strings.Fields(update.Message.Text)
+	if len(parts) < 2 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_reset_traffic <telegram_id>")
+		return
+	}
+	targetID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
+		return
+	}
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
+	if err != nil || len(rwUsers) == 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
+		return
+	}
+	if err := h.remnawaveClient.ResetUserTraffic(ctx, rwUsers[0].UUID); err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Error: %v", err))
+		return
+	}
+	limitGB := rwUsers[0].TrafficLimitBytes / config.BytesInGigabyte()
+	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Traffic reset for %d. Limit: %d GB", targetID, limitGB))
+	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: targetID, ParseMode: models.ParseModeHTML,
+		Text: "<b>Трафик сброшен!</b>\n\nВаш счётчик трафика сброшен администратором. Снова доступен полный объём.",
+	})
+	slog.Info("admin reset traffic", "telegram_id", targetID)
+}
+
+func (h Handler) AdminStatsCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	customers, err := h.customerRepository.FindAll(ctx)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("DB error: %v", err))
+		return
+	}
+	now := time.Now()
+	var activePaid, activeTrial, expired, noSub int
+	for _, c := range customers {
+		if c.ExpireAt == nil {
+			noSub++
+			continue
+		}
+		if c.ExpireAt.Before(now) {
+			expired++
+		} else if c.IsTrial {
+			activeTrial++
+		} else {
+			activePaid++
+		}
+	}
+	msg := fmt.Sprintf("Статистика бота\n\nВсего: %d\nАктивных подписок: %d\nТриалов: %d\nИстёкших: %d\nБез подписки: %d",
+		len(customers), activePaid, activeTrial, expired, noSub)
+	sendAdminReply(ctx, b, update.Message.Chat.ID, msg)
+}
+
+func pluralDays(n int) string {
+	switch {
+	case n%10 == 1 && n%100 != 11:
+		return "день"
+	case n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20):
+		return "дня"
+	default:
+		return "дней"
+	}
+}
 func countActive(customers []database.Customer) int {
 	now := time.Now()
 	n := 0
