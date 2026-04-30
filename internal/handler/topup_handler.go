@@ -25,11 +25,15 @@ func (h Handler) TopupCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 	if customer == nil || customer.ExpireAt == nil || !customer.ExpireAt.After(time.Now()) || customer.IsTrial {
+		blockMsg := h.translation.GetText(langCode, "topup_no_subscription")
+		if customer != nil && customer.IsTrial {
+			blockMsg = h.translation.GetText(langCode, "topup_trial_only")
+		}
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    msg.Chat.ID,
 			MessageID: msg.ID,
 			ParseMode: models.ParseModeHTML,
-			Text:      h.translation.GetText(langCode, "topup_no_subscription"),
+			Text:      blockMsg,
 			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
 				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
 			}},
