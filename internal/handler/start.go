@@ -1,7 +1,8 @@
-﻿package handler
+package handler
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
+	"remnawave-tg-shop-bot/internal/translation"
 	"remnawave-tg-shop-bot/utils"
 )
 
@@ -56,37 +58,30 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 			}
 		}
 	} else {
-		updates := map[string]interface{}{
-			"language": langCode,
-		}
-
-		err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, updates)
+		err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, map[string]interface{}{"language": langCode})
 		if err != nil {
 			slog.Error("Error updating customer", "error", err)
 			return
 		}
 	}
 
+	resetStrategy, lastResetAt := h.fetchResetInfo(ctx, existingCustomer)
 	inlineKeyboard := h.buildStartKeyboard(existingCustomer, langCode)
+	greetingText := buildGreetingText(existingCustomer, langCode, resetStrategy, lastResetAt)
 
 	m, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
 		Text:   "🧹",
-		ReplyMarkup: models.ReplyKeyboardRemove{
-			RemoveKeyboard: true,
-		},
+		ReplyMarkup: models.ReplyKeyboardRemove{RemoveKeyboard: true},
 	})
-
 	if err != nil {
 		slog.Error("Error sending removing reply keyboard", "error", err)
 		return
 	}
-
 	_, err = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
 		ChatID:    update.Message.Chat.ID,
 		MessageID: m.ID,
 	})
-
 	if err != nil {
 		slog.Error("Error deleting message", "error", err)
 		return
@@ -98,7 +93,7 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: inlineKeyboard,
 		},
-		Text: h.translation.GetText(langCode, "greeting"),
+		Text: greetingText,
 	})
 	if err != nil {
 		slog.Error("Error sending /start message", "error", err)
@@ -117,8 +112,13 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		slog.Error("error finding customer by telegram id", "error", err)
 		return
 	}
+	if existingCustomer == nil {
+		return
+	}
 
+	resetStrategy, lastResetAt := h.fetchResetInfo(ctxWithTime, existingCustomer)
 	inlineKeyboard := h.buildStartKeyboard(existingCustomer, langCode)
+	greetingText := buildGreetingText(existingCustomer, langCode, resetStrategy, lastResetAt)
 
 	_, err = b.EditMessageText(ctxWithTime, &bot.EditMessageTextParams{
 		ChatID:    callback.Message.Message.Chat.ID,
@@ -127,16 +127,49 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: inlineKeyboard,
 		},
-		Text: h.translation.GetText(langCode, "greeting"),
+		Text: greetingText,
 	})
 	if err != nil {
 		slog.Error("Error sending /start message", "error", err)
 	}
 }
 
+// fetchResetInfo fetches traffic strategy and last reset time from Remnawave.
+// Returns empty values on failure — callers handle gracefully (no reset shown).
+func (h Handler) fetchResetInfo(ctx context.Context, customer *database.Customer) (resetStrategy string, lastResetAt *time.Time) {
+	if customer.SubscriptionLink == nil || customer.ExpireAt == nil || !customer.ExpireAt.After(time.Now()) {
+		return
+	}
+	rwCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(rwCtx, customer.TelegramID)
+	if err == nil && len(rwUsers) > 0 {
+		resetStrategy = rwUsers[0].TrafficLimitStrategy
+		lastResetAt = rwUsers[0].LastTrafficResetAt
+	}
+	return
+}
+
+// buildGreetingText returns a personalized greeting showing subscription status and next reset.
+func buildGreetingText(customer *database.Customer, langCode string, resetStrategy string, lastResetAt *time.Time) string {
+	tm := translation.GetInstance()
+
+	if customer.SubscriptionLink != nil && customer.ExpireAt != nil && customer.ExpireAt.After(time.Now()) {
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf(tm.GetText(langCode, "subscription_active"), customer.ExpireAt.Format("02.01.2006")))
+		if nextReset := calcNextReset(resetStrategy, lastResetAt); nextReset != nil {
+			sb.WriteString("\n" + fmt.Sprintf(tm.GetText(langCode, "next_traffic_reset"), nextReset.Format("02.01.2006")))
+		}
+		sb.WriteString("\n\n" + tm.GetText(langCode, "greeting"))
+		return sb.String()
+	} else if customer.ExpireAt != nil {
+		return tm.GetText(langCode, "subscription_expired") + "\n\n" + tm.GetText(langCode, "greeting")
+	}
+	return tm.GetText(langCode, "greeting")
+}
+
 func (h Handler) resolveConnectButton(lang string) []models.InlineKeyboardButton {
 	bd := h.translation.GetButton(lang, "connect_button")
-
 	if config.GetMiniAppURL() != "" {
 		return []models.InlineKeyboardButton{bd.InlineWebApp(config.GetMiniAppURL())}
 	}
@@ -168,26 +201,23 @@ func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCod
 		})
 	}
 
-	if config.GetReferralDays() > 0 {
+	// Referrals only for active paid subscribers
+	if config.GetReferralDays() > 0 && existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) && !existingCustomer.IsTrial {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "referral_button").InlineCallback(CallbackReferral)})
 	}
 
 	if config.ServerStatusURL() != "" {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "server_status_button").InlineURL(config.ServerStatusURL())})
 	}
-
 	if config.SupportURL() != "" {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "support_button").InlineURL(config.SupportURL())})
 	}
-
 	if config.FeedbackURL() != "" {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "feedback_button").InlineURL(config.FeedbackURL())})
 	}
-
 	if config.ChannelURL() != "" {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "channel_button").InlineURL(config.ChannelURL())})
 	}
-
 	if config.TosURL() != "" {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "tos_button").InlineURL(config.TosURL())})
 	}
