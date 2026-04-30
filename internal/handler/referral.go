@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+
 	"log/slog"
 )
 
@@ -22,7 +23,11 @@ func (h Handler) ReferralCallbackHandler(ctx context.Context, b *bot.Bot, update
 	langCode := update.CallbackQuery.From.LanguageCode
 	refCode := customer.TelegramID
 
-	refLink := fmt.Sprintf("https://telegram.me/share/url?url=https://t.me/%s?start=ref_%d", update.CallbackQuery.Message.Message.From.Username, refCode)
+	botUsername := ""
+	if msg := update.CallbackQuery.Message.Message; msg != nil && msg.From != nil {
+		botUsername = msg.From.Username
+	}
+	refLink := fmt.Sprintf("https://telegram.me/share/url?url=https://t.me/%s?start=ref_%d", botUsername, refCode)
 	count, err := h.referralRepository.CountByReferrer(ctx, customer.TelegramID)
 	if err != nil {
 		slog.Error("error counting referrals", "error", err)

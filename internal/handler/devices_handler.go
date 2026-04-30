@@ -70,14 +70,14 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("📱 <b>Мои устройства</b>\n\n📅 Подписка до: <b>%s</b>\nПодключено: <b>%d</b>\n\n", expireDate, len(devices)))
 	for i, d := range devices {
-		sb.WriteString(fmt.Sprintf("<b>%d.</b> %s\n", i+1, buildDeviceDescription(d)))
+		sb.WriteString(fmt.Sprintf("<b>%d.</b> %s\n", i+1, buildDeviceDescription(i, d)))
 	}
 	sb.WriteString("\nНажмите кнопку устройства ниже, чтобы удалить его:")
 
 	// One delete button per device
 	var rows [][]models.InlineKeyboardButton
 	for i, d := range devices {
-		label := fmt.Sprintf("🗑️ Удалить #%d — %s", i+1, buildDeviceShortName(d))
+		label := fmt.Sprintf("🗑️ Удалить #%d — %s", i+1, buildDeviceShortName(i, d))
 		delCallback := fmt.Sprintf("%s?i=%d", CallbackDevicesDeleteDevice, i)
 		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: delCallback}})
 	}
@@ -200,7 +200,7 @@ func (h Handler) DevicesResetConfirmCallbackHandler(ctx context.Context, b *bot.
 }
 
 // buildDeviceDescription builds a full device description line for the message body.
-func buildDeviceDescription(d remnawave.HwidDevice) string {
+func buildDeviceDescription(idx int, d remnawave.HwidDevice) string {
 	var parts []string
 	if d.DeviceModel != nil && *d.DeviceModel != "" {
 		parts = append(parts, *d.DeviceModel)
@@ -211,17 +211,13 @@ func buildDeviceDescription(d remnawave.HwidDevice) string {
 		parts = append(parts, *d.Platform)
 	}
 	if len(parts) == 0 {
-		short := d.Hwid
-		if len(short) > 16 {
-			short = short[:16] + "..."
-		}
-		return "📱 " + short
+		return fmt.Sprintf("📱 Устройство #%d", idx+1)
 	}
 	return "📱 " + strings.Join(parts, " · ")
 }
 
 // buildDeviceShortName returns a short name for use in a button label.
-func buildDeviceShortName(d remnawave.HwidDevice) string {
+func buildDeviceShortName(idx int, d remnawave.HwidDevice) string {
 	if d.DeviceModel != nil && *d.DeviceModel != "" {
 		name := *d.DeviceModel
 		if len(name) > 20 {
@@ -232,10 +228,7 @@ func buildDeviceShortName(d remnawave.HwidDevice) string {
 	if d.Platform != nil && *d.Platform != "" {
 		return *d.Platform
 	}
-	if len(d.Hwid) > 8 {
-		return d.Hwid[:8] + "…"
-	}
-	return d.Hwid
+	return fmt.Sprintf("устройство #%d", idx+1)
 }
 
 
