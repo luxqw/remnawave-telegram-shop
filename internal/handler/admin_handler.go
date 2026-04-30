@@ -12,7 +12,6 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"remnawave-tg-shop-bot/internal/config"
-	"remnawave-tg-shop-bot/internal/database"
 )
 
 func (h Handler) AdminUserCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -194,10 +193,12 @@ func (h Handler) AdminExtendCommandHandler(ctx context.Context, b *bot.Bot, upda
 		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave error: %v", err))
 		return
 	}
-	_ = h.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{
+	if err := h.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{
 		"expire_at":         newUser.ExpireAt,
 		"subscription_link": newUser.SubscriptionUrl,
-	})
+	}); err != nil {
+		slog.Error("admin extend: update customer DB", "error", err)
+	}
 	expireDate := newUser.ExpireAt.Format("02.01.2006")
 	sendAdminReply(ctx, b, update.Message.Chat.ID,
 		fmt.Sprintf("Продлено на %d дн. для %d. Подписка до: %s", days, targetID, expireDate))
@@ -220,7 +221,7 @@ func (h Handler) AdminEnableCommandHandler(ctx context.Context, b *bot.Bot, upda
 func (h Handler) setRemnawaveStatus(ctx context.Context, b *bot.Bot, update *models.Update, status, userMsg string) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 2 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: "+parts[0]+" <telegram_id>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_disable or /admin_enable <telegram_id>")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -306,16 +307,6 @@ func pluralDays(n int) string {
 	default:
 		return "дней"
 	}
-}
-func countActive(customers []database.Customer) int {
-	now := time.Now()
-	n := 0
-	for _, c := range customers {
-		if c.ExpireAt != nil && c.ExpireAt.After(now) {
-			n++
-		}
-	}
-	return n
 }
 
 
