@@ -1,4 +1,4 @@
-package sync
+﻿package sync
 
 import (
 	"context"
@@ -78,9 +78,13 @@ func (s SyncService) Sync() {
 		}
 	}
 
-	err = s.customerRepository.DeleteByNotInTelegramIds(ctx, telegramIDs)
-	if err != nil {
-		slog.Error("Error while deleting users")
+	if len(telegramIDs) == 0 {
+		slog.Warn("sync: no Remnawave users have Telegram IDs, skipping deletion to protect data")
+	} else {
+		err = s.customerRepository.DeleteByNotInTelegramIds(ctx, telegramIDs)
+		if err != nil {
+			slog.Error("Error while deleting users")
+		}
 	}
 	slog.Info("Deleted clients which not exist in panel")
 

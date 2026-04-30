@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -152,6 +152,19 @@ func (h Handler) AdminBroadcastCommandHandler(ctx context.Context, b *bot.Bot, u
 	slog.Info("admin broadcast: done", "sent", sent, "failed", failed)
 }
 
+
+// AdminBroadcastTestCommandHandler handles /admin_broadcast_test <message>
+// Sends the broadcast message only to the admin for preview.
+func (h Handler) AdminBroadcastTestCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	parts := strings.SplitN(update.Message.Text, " ", 2)
+	if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_broadcast_test <message HTML>")
+		return
+	}
+	text := strings.TrimSpace(parts[1])
+	preview := "🧪 <b>Preview (только ты видишь это):</b>\n\n" + text
+	sendAdminReply(ctx, b, update.Message.Chat.ID, preview)
+}
 func sendAdminReply(ctx context.Context, b *bot.Bot, chatID int64, text string) {
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML})
 	if err != nil {

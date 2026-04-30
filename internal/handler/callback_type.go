@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 const (
 	CallbackBuy                 = "buy"
@@ -15,4 +15,5 @@ const (
 	CallbackDevices             = "devices"
 	CallbackDevicesReset        = "devices_reset"
 	CallbackDevicesResetConfirm = "devices_reset_confirm"
+	CallbackDevicesDeleteDevice = "devices_del"
 )

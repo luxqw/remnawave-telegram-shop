@@ -54,5 +54,9 @@
   "devices_reset_success_webapp": "✅ <b>Devices reset!</b>\n\nAll old connections have been disconnected. Click <b>«Connect»</b> to open the app and reconnect your devices.",
   "devices_reset_error": "❌ Failed to reset devices. Please contact support.",
   "trial_expiring": "⏰ <b>Trial period ending!</b>\n\nYour trial period expires on <b>%s</b>.\n\nPurchase a subscription to continue using the VPN without interruption.",
-  "traffic_warning": "⚠️ <b>Traffic almost used up</b>\n\nRemaining: <b>%d GB</b> of <b>%d GB</b>\n\nBuy additional traffic to keep your access until the next reset."
+  "traffic_warning": "⚠️ <b>Traffic almost used up</b>\n\nRemaining: <b>%d GB</b> of <b>%d GB</b>\n\nBuy additional traffic to keep your access until the next reset.",
+  "devices_list_header": "📱 <b>My Devices</b>\n\n📅 Subscription until: <b>%s</b>\nConnected: <b>%d</b> devices\n\nTap 🗑️ next to a device to remove it:",
+  "devices_empty": "📱 <b>My Devices</b>\n\n📅 Subscription until: <b>%s</b>\n\nNo connected devices.",
+  "devices_error": "❌ Failed to get device list. Please try again later.",
+  "devices_reset_success_no_url": "✅ <b>All devices disconnected!</b>"
 }

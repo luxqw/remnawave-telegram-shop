@@ -1,4 +1,4 @@
-package notification
+﻿package notification
 
 import (
 	"context"
@@ -52,13 +52,13 @@ func (s *TrafficWarningService) CheckAndNotify() error {
 			continue
 		}
 		u := rwUsers[0]
-		if u.TrafficLimitBytes == 0 || u.UsedTrafficBytes == 0 {
+		if u.TrafficLimitBytes == 0 || u.UserTraffic == nil || u.UserTraffic.UsedTrafficBytes == 0 {
 			continue
 		}
-		if float64(u.UsedTrafficBytes)/float64(u.TrafficLimitBytes) < 0.9 {
+		if float64(u.UserTraffic.UsedTrafficBytes)/float64(u.TrafficLimitBytes) < 0.9 {
 			continue
 		}
-		remainingGB := (u.TrafficLimitBytes - u.UsedTrafficBytes) / config.BytesInGigabyte()
+		remainingGB := (u.TrafficLimitBytes - u.UserTraffic.UsedTrafficBytes) / config.BytesInGigabyte()
 		totalGB := u.TrafficLimitBytes / config.BytesInGigabyte()
 		text := fmt.Sprintf(s.tm.GetText(customer.Language, "traffic_warning"), remainingGB, totalGB)
 		var rows [][]models.InlineKeyboardButton

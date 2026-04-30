@@ -6,17 +6,44 @@ import (
 	"github.com/google/uuid"
 )
 
+// UserTraffic contains traffic usage statistics for a user.
+type UserTraffic struct {
+	UsedTrafficBytes         int        `json:"usedTrafficBytes"`
+	LifetimeUsedTrafficBytes int        `json:"lifetimeUsedTrafficBytes"`
+	OnlineAt                 *time.Time `json:"onlineAt"`
+}
+
+// HwidDevice represents a hardware device registered for a user.
+type HwidDevice struct {
+	Hwid        string     `json:"hwid"`
+	UserUuid    string     `json:"userUuid"`
+	Platform    *string    `json:"platform"`
+	OsVersion   *string    `json:"osVersion"`
+	DeviceModel *string    `json:"deviceModel"`
+	UserAgent   *string    `json:"userAgent"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+}
+
+type getUserHwidDevicesResponse struct {
+	Response struct {
+		Total   int          `json:"total"`
+		Devices []HwidDevice `json:"devices"`
+	} `json:"response"`
+}
+
 // User represents a Remnawave user.
 type User struct {
-	UUID                 uuid.UUID `json:"uuid"`
-	Username             string    `json:"username"`
-	SubscriptionUrl      string    `json:"subscriptionUrl"`
-	ExpireAt             time.Time `json:"expireAt"`
-	TelegramID           *int64    `json:"telegramId"`
-	Status               string    `json:"status"`
-	TrafficLimitBytes    int       `json:"trafficLimitBytes"`
-	TrafficLimitStrategy string    `json:"trafficLimitStrategy"`
-	UsedTrafficBytes     int       `json:"usedTrafficBytes"`
+	UUID                 uuid.UUID    `json:"uuid"`
+	Username             string       `json:"username"`
+	SubscriptionUrl      string       `json:"subscriptionUrl"`
+	ExpireAt             time.Time    `json:"expireAt"`
+	TelegramID           *int64       `json:"telegramId"`
+	Status               string       `json:"status"`
+	TrafficLimitBytes    int          `json:"trafficLimitBytes"`
+	TrafficLimitStrategy string       `json:"trafficLimitStrategy"`
+	HwidDeviceLimit      *int         `json:"hwidDeviceLimit"`
+	UserTraffic          *UserTraffic `json:"userTraffic"`
 }
 
 // getAllUsersResponse is the raw API response for GET /api/users.
@@ -75,5 +102,3 @@ type UpdateUserRequest struct {
 	Tag                  *string     `json:"tag,omitempty"`
 	Description          *string     `json:"description,omitempty"`
 }
-
-

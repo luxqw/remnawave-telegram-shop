@@ -468,6 +468,28 @@ func (r *Client) ResetSubscription(ctx context.Context, customerId int64, telegr
 // DeleteUser
 // ---------------------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// HWID Device Management
+// ---------------------------------------------------------------------------
+
+func (r *Client) GetUserHwidDevices(ctx context.Context, userUUID uuid.UUID) ([]HwidDevice, error) {
+	var resp getUserHwidDevicesResponse
+	if err := r.doJSON(ctx, http.MethodGet, "/api/hwid/devices/"+userUUID.String(), nil, &resp); err != nil {
+		return nil, fmt.Errorf("get hwid devices: %w", err)
+	}
+	return resp.Response.Devices, nil
+}
+
+func (r *Client) DeleteUserHwidDevice(ctx context.Context, userUUID uuid.UUID, hwid string) error {
+	body := map[string]string{"userUuid": userUUID.String(), "hwid": hwid}
+	return r.doJSON(ctx, http.MethodPost, "/api/hwid/devices/delete", body, nil)
+}
+
+func (r *Client) DeleteAllUserHwidDevices(ctx context.Context, userUUID uuid.UUID) error {
+	body := map[string]string{"userUuid": userUUID.String()}
+	return r.doJSON(ctx, http.MethodPost, "/api/hwid/devices/delete-all", body, nil)
+}
 func generateUsername(customerId int64, telegramId int64) string {
 	return fmt.Sprintf("%d_%d", customerId, telegramId)
 }
