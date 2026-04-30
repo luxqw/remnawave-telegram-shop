@@ -99,6 +99,7 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 	customerFilesToUpdate := map[string]interface{}{
 		"subscription_link": user.SubscriptionUrl,
 		"expire_at":         user.ExpireAt,
+		"is_trial":          false,
 	}
 
 	err = s.customerRepository.UpdateFields(ctx, customer.ID, customerFilesToUpdate)
@@ -408,6 +409,7 @@ func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (st
 	customerFilesToUpdate := map[string]interface{}{
 		"subscription_link": user.SubscriptionUrl,
 		"expire_at":         user.ExpireAt,
+		"is_trial":          false,
 	}
 
 	err = s.customerRepository.UpdateFields(ctx, customer.ID, customerFilesToUpdate)
@@ -484,3 +486,5 @@ func (s PaymentService) sendReceiptToMoynalog(ctx context.Context, purchase *dat
 	slog.Info("Receipt sent to Moynalog", "purchase_id", utils.MaskHalfInt64(purchase.ID), "amount", amount, "comment", comment)
 	return nil
 }
+
+

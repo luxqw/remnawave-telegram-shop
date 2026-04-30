@@ -423,6 +423,47 @@ func (r *Client) createUser(ctx context.Context, customerId int64, telegramId in
 // Utility functions
 // ---------------------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// DeleteUser
+// ---------------------------------------------------------------------------
+
+func (r *Client) DeleteUser(ctx context.Context, userUUID uuid.UUID) error {
+	_, _, err := r.doRequest(ctx, http.MethodDelete, "/api/users/"+userUUID.String(), nil)
+	if err != nil {
+		return fmt.Errorf("delete user %s: %w", userUUID, err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// ResetSubscription — delete existing user and recreate with same settings
+// ---------------------------------------------------------------------------
+
+func (r *Client) ResetSubscription(ctx context.Context, customerId int64, telegramId int64, isTrial bool) (*User, error) {
+	users, err := r.getUsersByTelegramID(ctx, telegramId)
+	if err != nil {
+		return nil, fmt.Errorf("reset subscription: get user: %w", err)
+	}
+	if len(users) == 0 {
+		return nil, fmt.Errorf("reset subscription: user not found for telegram_id %d", telegramId)
+	}
+	existing := findUserBySuffix(users, telegramId)
+	daysLeft := int(time.Until(existing.ExpireAt).Hours() / 24)
+	if daysLeft < 1 {
+		daysLeft = 1
+	}
+	trafficLimit := existing.TrafficLimitBytes
+	if err := r.DeleteUser(ctx, existing.UUID); err != nil {
+		return nil, fmt.Errorf("reset subscription: delete: %w", err)
+	}
+	newUser, err := r.createUser(ctx, customerId, telegramId, trafficLimit, daysLeft, isTrial)
+	if err != nil {
+		return nil, fmt.Errorf("reset subscription: recreate: %w", err)
+	}
+	return newUser, nil
+}
+
 func generateUsername(customerId int64, telegramId int64) string {
 	return fmt.Sprintf("%d_%d", customerId, telegramId)
 }
@@ -451,3 +492,4 @@ func normalizeStrategy(s string) string {
 		return "MONTH"
 	}
 }
+

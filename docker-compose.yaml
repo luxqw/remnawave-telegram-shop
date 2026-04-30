@@ -42,9 +42,9 @@ services:
     command:
       - "http"
       - "http://bot:8080"
-      - "--domain=relaxing-lemur-pleasantly.ngrok-free.app"
+      - "--url=relaxing-lemur-pleasantly.ngrok-free.app"
     environment:
-      NGROK_AUTHTOKEN: 2zgp8UoZS4pcvb777sRjQROD7Cv_2L81bCpNSR3CaRQ4NHpjK
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
     ports:
       - 4040:4040
 
@@ -58,3 +58,5 @@ networks:
   default: {}
   remnawave-network:
     external: true
+
+

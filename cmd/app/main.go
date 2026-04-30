@@ -77,6 +77,7 @@ func main() {
 	purchaseRepository := database.NewPurchaseRepository(pool)
 	referralRepository := database.NewReferralRepository(pool)
 	topupRepository := database.NewTrafficTopupRepository(pool)
+	webhookInboxRepository := database.NewWebhookInboxRepository(pool)
 
 	cryptoPayClient := cryptopay.NewCryptoPayClient(config.CryptoPayUrl(), config.CryptoPayToken())
 	remnawaveClient := remnawave.NewClient(config.RemnawaveUrl(), config.RemnawaveToken(), config.RemnawaveMode())
@@ -112,6 +113,11 @@ func main() {
 	subscriptionNotificationCronScheduler := subscriptionChecker(subService)
 	subscriptionNotificationCronScheduler.Start()
 	defer subscriptionNotificationCronScheduler.Stop()
+
+	trafficSvc := notification.NewTrafficWarningService(customerRepository, remnawaveClient, b, tm)
+	trafficCron := setupTrafficWarningCron(trafficSvc)
+	trafficCron.Start()
+	defer trafficCron.Stop()
 
 	topupCleanupCron := setupTopupCleanup(topupRepository)
 	topupCleanupCron.Start()
@@ -167,6 +173,9 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopup, bot.MatchTypeExact, h.TopupCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopupSelect, bot.MatchTypePrefix, h.TopupSelectCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopupCancel, bot.MatchTypePrefix, h.TopupCancelCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevices, bot.MatchTypeExact, h.DevicesCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesReset, bot.MatchTypeExact, h.DevicesResetCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesResetConfirm, bot.MatchTypeExact, h.DevicesResetConfirmCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackPayment, bot.MatchTypePrefix, h.PaymentCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
 		return update.PreCheckoutQuery != nil
@@ -179,8 +188,11 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/healthcheck", fullHealthHandler(pool, remnawaveClient))
 	if config.GetTributeWebHookUrl() != "" {
-		tributeHandler := tribute.NewClient(paymentService, customerRepository, topupRepository, remnawaveClient, b)
-		mux.Handle(config.GetTributeWebHookUrl(), tributeHandler.WebHookHandler())
+		tributeClient := tribute.NewClient(paymentService, customerRepository, topupRepository, webhookInboxRepository, remnawaveClient, b)
+		mux.Handle(config.GetTributeWebHookUrl(), tributeClient.WebHookHandler())
+		webhookRetryCron := setupWebhookRetryCron(tributeClient)
+		webhookRetryCron.Start()
+		defer webhookRetryCron.Stop()
 	}
 
 	srv := &http.Server{
@@ -256,7 +268,7 @@ func isAdminMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
 func subscriptionChecker(subService *notification.SubscriptionService) *cron.Cron {
 	c := cron.New()
 
-	_, err := c.AddFunc("0 16 * * *", func() {
+	_, err := c.AddFunc("0 */4 * * *", func() {
 		err := subService.ProcessSubscriptionExpiration()
 		if err != nil {
 			slog.Error("Error sending subscription notifications", "error", err)
@@ -293,6 +305,32 @@ func setupTopupCleanup(topupRepository *database.TrafficTopupRepository) *cron.C
 		}
 		if n > 0 {
 			slog.Info("topup cleanup: expired stale pending records", "count", n)
+		}
+	})
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func setupWebhookRetryCron(tributeClient *tribute.Client) *cron.Cron {
+	c := cron.New()
+	_, err := c.AddFunc("*/10 * * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		tributeClient.RetryFailed(ctx)
+	})
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func setupTrafficWarningCron(svc *notification.TrafficWarningService) *cron.Cron {
+	c := cron.New()
+	_, err := c.AddFunc("0 12 * * *", func() {
+		if err := svc.CheckAndNotify(); err != nil {
+			slog.Error("traffic warning cron error", "error", err)
 		}
 	})
 	if err != nil {
@@ -446,3 +484,6 @@ func checkCryptoPayInvoice(
 	}
 
 }
+
+
+

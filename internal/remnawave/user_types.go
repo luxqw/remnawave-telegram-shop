@@ -1,4 +1,4 @@
-package remnawave
+﻿package remnawave
 
 import (
 	"time"
@@ -16,6 +16,7 @@ type User struct {
 	Status               string    `json:"status"`
 	TrafficLimitBytes    int       `json:"trafficLimitBytes"`
 	TrafficLimitStrategy string    `json:"trafficLimitStrategy"`
+	UsedTrafficBytes     int       `json:"usedTrafficBytes"`
 }
 
 // getAllUsersResponse is the raw API response for GET /api/users.
@@ -74,3 +75,5 @@ type UpdateUserRequest struct {
 	Tag                  *string     `json:"tag,omitempty"`
 	Description          *string     `json:"description,omitempty"`
 }
+
+

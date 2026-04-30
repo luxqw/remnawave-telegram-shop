@@ -1,121 +1,58 @@
 {
-  "greeting": "👋🏻 <b>Hello</b>\nThis is a bot for connecting to <b>VPN</b>🛡\n\n<b>How to connect:</b>\n• click the <b>Connect</b> button\n• follow the short instructions",
-  "buy_button": {
-    "text": "Buy",
-    "emoji_id": "5258165702707125574"
-  },
-  "connect_button": {
-    "text": "Connect",
-    "emoji_id": "5843553939672274145"
-  },
-  "back_button": {
-    "text": "Back",
-    "emoji_id": "6039539366177541657"
-  },
+  "greeting": "👋 <b>Hello!</b>\nThis is a bot for connecting to <b>VPN</b> 🛡️\n\n<b>How to connect:</b>\n• Click <b>«Buy»</b> and purchase a subscription\n• Then click <b>«Connect»</b> and follow the instructions",
+  "buy_button": { "text": "🛒 Buy Subscription" },
+  "connect_button": { "text": "🔗 Connect" },
+  "back_button": { "text": "◀️ Back" },
   "pricing_info": "Russian bank cards and cryptocurrency are accepted for payment",
-  "month_1": {
-    "text": "1 month",
-    "emoji_id": "5890937706803894250"
-  },
-  "month_3": {
-    "text": "3 months",
-    "emoji_id": "5890937706803894250"
-  },
-  "month_6": {
-    "text": "6 months",
-    "emoji_id": "5890937706803894250"
-  },
-  "month_12": {
-    "text": "12 months",
-    "emoji_id": "5890937706803894250"
-  },
-  "crypto_button": {
-    "text": "Cryptocurrency",
-    "emoji_id": "5402186569006210455"
-  },
-  "card_button": {
-    "text": "Bank card",
-    "emoji_id": "5258165702707125574"
-  },
-  "pay_button": {
-    "text": "Pay",
-    "emoji_id": "5436386989857320953"
-  },
-  "subscription_active": "Your subscription is valid until: %s",
-  "subscription_link": "\n\nSubscription link: %s",
-  "no_subscription": "You don't have an active subscription",
-  "subscription_activated": "Your subscription has been activated!",
-  "feedback_button": {
-    "text": "Feedback",
-    "emoji_id": "5379600444098093058"
-  },
-  "server_status_button": {
-    "text": "Server Status",
-    "emoji_id": "5805532930662996322"
-  },
-  "support_button": {
-    "text": "Support",
-    "emoji_id": "6301027265899661025"
-  },
-  "channel_button": {
-    "text": "Channel",
-    "emoji_id": "6021418126061605425"
-  },
-  "tos_button": {
-    "text": "Terms Of Service",
-    "emoji_id": "5886330010054168711"
-  },
-  "subscription_expiring": "⚠️ <b>Subscription Alert</b> ⚠️\n\nYour subscription expires on %s\nTo continue using the service, please renew your subscription",
-  "renew_subscription_button": {
-    "text": "Renew Subscription",
-    "emoji_id": "5260687681733533075"
-  },
-  "invoice_description": "Subscription",
-  "invoice_label": "Subscription",
-  "invoice_title": "Subscription",
-  "trial_button": {
-    "text": "Try for free",
-    "emoji_id": "5089506485931606869"
-  },
-  "trial_activated": "Trial period activated",
-  "trial_text": "Your trial version is active",
-  "activate_trial_button": {
-    "text": "Activate trial version",
-    "emoji_id": "5089506485931606869"
-  },
-  "referral_button": {
-    "text": "Referrals",
-    "emoji_id": "6032594876506312598"
-  },
+  "month_1": { "text": "📅 1 month" },
+  "month_3": { "text": "📅 3 months" },
+  "month_6": { "text": "📅 6 months" },
+  "month_12": { "text": "📅 12 months" },
+  "crypto_button": { "text": "🪙 Cryptocurrency" },
+  "card_button": { "text": "💳 Bank card" },
+  "pay_button": { "text": "💰 Pay" },
+  "subscription_active": "✅ Subscription active until <b>%s</b>",
+  "subscription_link": "\n\n🔗 Subscription link:\n%s",
+  "no_subscription": "❌ You don't have an active subscription.\n\nClick <b>«Buy»</b> to purchase a subscription.",
+  "subscription_activated": "✅ Subscription successfully activated!",
+  "feedback_button": { "text": "⭐ Feedback" },
+  "server_status_button": { "text": "🟢 Server Status" },
+  "support_button": { "text": "💬 Support" },
+  "channel_button": { "text": "📢 Channel" },
+  "tos_button": { "text": "📄 Terms of Service" },
+  "subscription_expiring": "⚠️ <b>Subscription Reminder</b>\n\nYour subscription expires on <b>%s</b>.\nPlease renew it to avoid losing access.",
+  "renew_subscription_button": { "text": "🔄 Renew Subscription" },
+  "invoice_description": "VPN Subscription",
+  "invoice_label": "VPN Subscription",
+  "invoice_title": "VPN Subscription",
+  "trial_button": { "text": "🎁 Try for free" },
+  "trial_activated": "✅ Trial period activated!\n\nClick «Connect» to get your subscription link.",
+  "trial_text": "Your trial period is active",
+  "activate_trial_button": { "text": "🎁 Activate trial period" },
+  "referral_button": { "text": "👥 Referrals" },
   "referral_text": "Invited: %d",
-  "referral_bonus_granted": "You have received a referral bonus!",
-  "stars_button": {
-    "text": "Telegram Stars",
-    "emoji_id": "5373082993207921989"
-  },
-  "share_referral_button": {
-    "text": "Share!",
-    "emoji_id": "5429651785352501917"
-  },
-  "web_app_button_text": {
-    "text": "Connect",
-    "emoji_id": "5843553939672274145"
-  },
-  "tribute_button": {
-    "text": "Tribute",
-    "emoji_id": "5258165702707125574"
-  },
-  "tribute_cancelled": "Tribute cancelled",
-  "access_denied": "⚠️ Access denied. Please update your profile information.",
-  "topup_button": {
-    "text": "Buy traffic",
-    "emoji_id": "5372981976804366741"
-  },
-  "topup_select_package": "Select a traffic package:",
-  "topup_disclaimer": "⚠️ Additional <b>%d GB</b> will be available until the next traffic reset.\nAfter reset, the limit returns to the base value.\n\nClick the button below to pay via Tribute:",
-  "topup_pending_warning": "⏳ You have a pending payment.\nPlease wait for it to complete or cancel it.",
-  "topup_cancel_button": {
-    "text": "Cancel and start over",
-    "emoji_id": "6039539366177541657"
-  }
+  "referral_bonus_granted": "🎁 You received a referral bonus!",
+  "stars_button": { "text": "⭐ Telegram Stars" },
+  "share_referral_button": { "text": "📤 Share!" },
+  "web_app_button_text": { "text": "🔗 Connect" },
+  "tribute_button": { "text": "💳 Tribute" },
+  "tribute_cancelled": "❌ Your Tribute subscription has been cancelled.\n\nTo continue using the VPN, please purchase a new subscription.",
+  "access_denied": "⚠️ Access denied. Please update your profile.",
+  "topup_button": { "text": "📦 Buy traffic" },
+  "topup_select_package": "📦 Select a traffic package:",
+  "topup_disclaimer": "📦 <b>+%d GB</b> of additional traffic\n\n⚠️ Traffic is available until the next reset. After the reset, the limit returns to the base value.\n\nClick the button below to pay via Tribute:",
+  "topup_pending_warning": "⏳ <b>Pending payment</b>\n\nYou have an unfinished payment. Please wait for it to complete or cancel it.",
+  "topup_cancel_button": { "text": "❌ Cancel and start over" },
+  "topup_no_subscription": "❌ You can only buy additional traffic with an active subscription.\n\nPurchase a subscription by clicking <b>«Buy»</b>.",
+  "devices_button": { "text": "📱 My Devices" },
+  "devices_info": "📱 <b>Device Management</b>\n\n📅 Subscription active until: <b>%s</b>\n\n🔗 <b>Connection link:</b>\n<code>%s</code>\n\nUse this link to connect on new devices.\n\n⚠️ If you want to reset all devices — click the button below.",
+  "devices_info_webapp": "📱 <b>Device Management</b>\n\n📅 Subscription active until: <b>%s</b>\n\nTo connect on new devices, click the <b>«Connect»</b> button below.\n\n⚠️ If you want to reset all devices — click <b>«Reset all devices»</b>.",
+  "devices_reset_button": { "text": "🔄 Reset all devices" },
+  "devices_reset_confirm": "⚠️ <b>Confirm reset</b>\n\nAfter reset:\n• All connected devices will be disconnected\n• You will receive a new connection link\n• You will need to reconnect all devices\n\nAre you sure?",
+  "devices_reset_confirm_button": { "text": "✅ Yes, reset devices" },
+  "devices_reset_success": "✅ <b>Devices reset!</b>\n\nAll old connections have been disconnected.\n\n🔗 <b>New connection link:</b>\n<code>%s</code>\n\nCopy the link and reconnect your devices.",
+  "devices_reset_success_webapp": "✅ <b>Devices reset!</b>\n\nAll old connections have been disconnected. Click <b>«Connect»</b> to open the app and reconnect your devices.",
+  "devices_reset_error": "❌ Failed to reset devices. Please contact support.",
+  "trial_expiring": "⏰ <b>Trial period ending!</b>\n\nYour trial period expires on <b>%s</b>.\n\nPurchase a subscription to continue using the VPN without interruption.",
+  "traffic_warning": "⚠️ <b>Traffic almost used up</b>\n\nRemaining: <b>%d GB</b> of <b>%d GB</b>\n\nBuy additional traffic to keep your access until the next reset."
 }

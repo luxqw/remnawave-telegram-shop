@@ -43,6 +43,7 @@ func NewSubscriptionService(customerRepository customerRepository,
 	svc.notify = svc.sendNotification
 	return svc
 }
+
 func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 	ctx := context.Background()
 	customers, err := s.getCustomersWithExpiringSubscriptions()
@@ -50,37 +51,32 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 		slog.Error("Failed to get customers with expiring subscriptions", "error", err)
 		return err
 	}
-
 	slog.Info(fmt.Sprintf("Found %d customers with expiring subscriptions", len(*customers)))
 	if len(*customers) == 0 {
 		return nil
 	}
 	now := time.Now()
-
 	customersIds := make([]int64, len(*customers))
 	for i, customer := range *customers {
 		customersIds[i] = customer.ID
 	}
-
 	latestActiveTributes, err := s.purchaseRepository.FindLatestActiveTributesByCustomerIDs(ctx, customersIds)
 	if err != nil {
 		slog.Error("Failed to query tribute purchases", "error", err)
 		return err
 	}
-
 	customerIdTributes := make(map[int64]*database.Purchase, len(*latestActiveTributes))
 	for i := range *latestActiveTributes {
 		p := &(*latestActiveTributes)[i]
 		customerIdTributes[p.CustomerID] = p
 	}
-
 	tributesProcessed := make(map[int64]bool, len(*latestActiveTributes))
 
 	for _, customer := range *customers {
 		daysUntilExpiration := s.getDaysUntilExpiration(now, *customer.ExpireAt)
 
 		if p, ok := customerIdTributes[customer.ID]; ok {
-			if daysUntilExpiration != 1 {
+			if daysUntilExpiration > 1 {
 				continue
 			}
 			_, purchaseId, err := s.paymentService.CreatePurchase(ctx, p.Amount, p.Month, &customer, database.InvoiceTypeTribute)
@@ -88,7 +84,6 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 				slog.Error("Failed to create tribute purchase", "error", err)
 				continue
 			}
-
 			err = s.paymentService.ProcessPurchaseById(ctx, purchaseId)
 			if err != nil {
 				slog.Error("Failed to process tribute purchase", "error", err)
@@ -101,23 +96,23 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 			continue
 		}
 
+		if customer.IsTrial {
+			if daysUntilExpiration <= 1 {
+				_ = s.sendTrialExpiringNotification(ctx, customer)
+			}
+			continue
+		}
+
 		send := s.notify
 		if send == nil {
 			send = s.sendNotification
 		}
-
 		err := send(ctx, customer)
 		if err != nil {
-			slog.Error("Failed to send notification",
-				"customer_id", customer.ID,
-				"days_until_expiration", daysUntilExpiration,
-				"error", err)
+			slog.Error("Failed to send notification", "customer_id", customer.ID, "days_until_expiration", daysUntilExpiration, "error", err)
 			continue
 		}
-
-		slog.Info("Notification sent successfully",
-			"customer_id", customer.ID,
-			"days_until_expiration", daysUntilExpiration)
+		slog.Info("Notification sent successfully", "customer_id", customer.ID, "days_until_expiration", daysUntilExpiration)
 	}
 
 	slog.Info(fmt.Sprintf("Processed tributes customers %d with expiring subscriptions", len(tributesProcessed)))
@@ -127,32 +122,41 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 
 func (s *SubscriptionService) getCustomersWithExpiringSubscriptions() (*[]database.Customer, error) {
 	now := time.Now()
+	startDate := now.AddDate(0, 0, -1)
 	endDate := now.AddDate(0, 0, 3)
-
-	dbCustomers, err := s.customerRepository.FindByExpirationRange(context.Background(), now, endDate)
+	dbCustomers, err := s.customerRepository.FindByExpirationRange(context.Background(), startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
-
 	return dbCustomers, nil
 }
 
 func (s *SubscriptionService) getDaysUntilExpiration(now time.Time, expireAt time.Time) int {
 	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	expireDate := time.Date(expireAt.Year(), expireAt.Month(), expireAt.Day(), 0, 0, 0, 0, expireAt.Location())
-
 	duration := expireDate.Sub(nowDate)
 	return int(duration.Hours() / 24)
 }
 
+func (s *SubscriptionService) sendTrialExpiringNotification(ctx context.Context, customer database.Customer) error {
+	expireDate := customer.ExpireAt.Format("02.01.2006")
+	text := fmt.Sprintf(s.tm.GetText(customer.Language, "trial_expiring"), expireDate)
+	_, err := s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    customer.TelegramID,
+		Text:      text,
+		ParseMode: models.ParseModeHTML,
+		ReplyMarkup: models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{s.tm.GetButton(customer.Language, "buy_button").InlineCallback(handler.CallbackBuy)},
+			},
+		},
+	})
+	return err
+}
+
 func (s *SubscriptionService) sendNotification(ctx context.Context, customer database.Customer) error {
 	expireDate := customer.ExpireAt.Format("02.01.2006")
-
-	messageText := fmt.Sprintf(
-		s.tm.GetText(customer.Language, "subscription_expiring"),
-		expireDate,
-	)
-
+	messageText := fmt.Sprintf(s.tm.GetText(customer.Language, "subscription_expiring"), expireDate)
 	_, err := s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    customer.TelegramID,
 		Text:      messageText,
@@ -163,6 +167,5 @@ func (s *SubscriptionService) sendNotification(ctx context.Context, customer dat
 			},
 		},
 	})
-
 	return err
 }
