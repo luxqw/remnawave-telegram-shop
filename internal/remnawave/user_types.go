@@ -1,4 +1,4 @@
-﻿package remnawave
+package remnawave
 
 import (
 	"time"
@@ -44,6 +44,7 @@ type User struct {
 	TrafficLimitStrategy string       `json:"trafficLimitStrategy"`
 	HwidDeviceLimit      *int         `json:"hwidDeviceLimit"`
 	UserTraffic          *UserTraffic `json:"userTraffic"`
+	LastTrafficResetAt   *time.Time   `json:"lastTrafficResetAt"`
 }
 
 // getAllUsersResponse is the raw API response for GET /api/users.

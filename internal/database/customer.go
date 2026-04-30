@@ -1,4 +1,4 @@
-package database
+﻿package database
 
 import (
 	"context"
@@ -21,44 +21,53 @@ func NewCustomerRepository(poll *pgxpool.Pool) *CustomerRepository {
 }
 
 type Customer struct {
-	ID               int64      `db:"id"`
-	TelegramID       int64      `db:"telegram_id"`
-	ExpireAt         *time.Time `db:"expire_at"`
-	CreatedAt        time.Time  `db:"created_at"`
-	SubscriptionLink *string    `db:"subscription_link"`
-	Language         string     `db:"language"`
-	IsTrial          bool       `db:"is_trial"`
+	ID                   int64      `db:"id"`
+	TelegramID           int64      `db:"telegram_id"`
+	ExpireAt             *time.Time `db:"expire_at"`
+	CreatedAt            time.Time  `db:"created_at"`
+	SubscriptionLink     *string    `db:"subscription_link"`
+	Language             string     `db:"language"`
+	IsTrial              bool       `db:"is_trial"`
+	LastTrafficWarningAt *time.Time `db:"last_traffic_warning_at"`
+}
+
+var cols = []string{"id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial", "last_traffic_warning_at"}
+
+func scanCustomer(row interface{ Scan(...interface{}) error }, customer *Customer) error {
+	return row.Scan(
+		&customer.ID,
+		&customer.TelegramID,
+		&customer.ExpireAt,
+		&customer.CreatedAt,
+		&customer.SubscriptionLink,
+		&customer.Language,
+		&customer.IsTrial,
+		&customer.LastTrafficWarningAt,
+	)
 }
 
 func (cr *CustomerRepository) FindByExpirationRange(ctx context.Context, startDate, endDate time.Time) (*[]Customer, error) {
-	buildSelect := sq.Select("id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial").
-		From("customer").
+	sql, args, err := sq.Select(cols...).From("customer").
 		Where(sq.And{
 			sq.NotEq{"expire_at": nil},
 			sq.GtOrEq{"expire_at": startDate},
 			sq.LtOrEq{"expire_at": endDate},
-		}).
-		PlaceholderFormat(sq.Dollar)
-
-	sql, args, err := buildSelect.ToSql()
+		}).PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
-
 	rows, err := cr.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query customers by expiration range: %w", err)
 	}
 	defer rows.Close()
-
 	var customers []Customer
 	for rows.Next() {
-		var customer Customer
-		err := rows.Scan(&customer.ID, &customer.TelegramID, &customer.ExpireAt, &customer.CreatedAt, &customer.SubscriptionLink, &customer.Language, &customer.IsTrial)
-		if err != nil {
+		var c Customer
+		if err := scanCustomer(rows, &c); err != nil {
 			return nil, fmt.Errorf("failed to scan customer row: %w", err)
 		}
-		customers = append(customers, customer)
+		customers = append(customers, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating over customer rows: %w", err)
@@ -67,39 +76,33 @@ func (cr *CustomerRepository) FindByExpirationRange(ctx context.Context, startDa
 }
 
 func (cr *CustomerRepository) FindById(ctx context.Context, id int64) (*Customer, error) {
-	buildSelect := sq.Select("id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial").
-		From("customer").Where(sq.Eq{"id": id}).PlaceholderFormat(sq.Dollar)
-	sql, args, err := buildSelect.ToSql()
+	sql, args, err := sq.Select(cols...).From("customer").Where(sq.Eq{"id": id}).PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
-	var customer Customer
-	err = cr.pool.QueryRow(ctx, sql, args...).Scan(&customer.ID, &customer.TelegramID, &customer.ExpireAt, &customer.CreatedAt, &customer.SubscriptionLink, &customer.Language, &customer.IsTrial)
-	if err != nil {
+	var c Customer
+	if err := scanCustomer(cr.pool.QueryRow(ctx, sql, args...), &c); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to query customer: %w", err)
 	}
-	return &customer, nil
+	return &c, nil
 }
 
 func (cr *CustomerRepository) FindByTelegramId(ctx context.Context, telegramId int64) (*Customer, error) {
-	buildSelect := sq.Select("id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial").
-		From("customer").Where(sq.Eq{"telegram_id": telegramId}).PlaceholderFormat(sq.Dollar)
-	sql, args, err := buildSelect.ToSql()
+	sql, args, err := sq.Select(cols...).From("customer").Where(sq.Eq{"telegram_id": telegramId}).PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
-	var customer Customer
-	err = cr.pool.QueryRow(ctx, sql, args...).Scan(&customer.ID, &customer.TelegramID, &customer.ExpireAt, &customer.CreatedAt, &customer.SubscriptionLink, &customer.Language, &customer.IsTrial)
-	if err != nil {
+	var c Customer
+	if err := scanCustomer(cr.pool.QueryRow(ctx, sql, args...), &c); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to query customer: %w", err)
 	}
-	return &customer, nil
+	return &c, nil
 }
 
 func (cr *CustomerRepository) Create(ctx context.Context, customer *Customer) (*Customer, error) {
@@ -111,11 +114,10 @@ func (cr *CustomerRepository) FindOrCreate(ctx context.Context, customer *Custom
 		INSERT INTO customer (telegram_id, expire_at, language)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = customer.telegram_id
-		RETURNING id, telegram_id, expire_at, created_at, subscription_link, language, is_trial
+		RETURNING id, telegram_id, expire_at, created_at, subscription_link, language, is_trial, last_traffic_warning_at
 	`
-	row := cr.pool.QueryRow(ctx, query, customer.TelegramID, customer.ExpireAt, customer.Language)
 	var result Customer
-	if err := row.Scan(&result.ID, &result.TelegramID, &result.ExpireAt, &result.CreatedAt, &result.SubscriptionLink, &result.Language, &result.IsTrial); err != nil {
+	if err := scanCustomer(cr.pool.QueryRow(ctx, query, customer.TelegramID, customer.ExpireAt, customer.Language), &result); err != nil {
 		return nil, fmt.Errorf("failed to find or create customer: %w", err)
 	}
 	slog.Info("user found or created in bot database", "telegramId", utils.MaskHalfInt64(result.TelegramID))
@@ -154,24 +156,22 @@ func (cr *CustomerRepository) UpdateFields(ctx context.Context, id int64, update
 }
 
 func (cr *CustomerRepository) FindAll(ctx context.Context) ([]Customer, error) {
-	buildSelect := sq.Select("id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial").
-		From("customer").PlaceholderFormat(sq.Dollar)
-	sqlStr, args, err := buildSelect.ToSql()
+	sql, args, err := sq.Select(cols...).From("customer").PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
-	rows, err := cr.pool.Query(ctx, sqlStr, args...)
+	rows, err := cr.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query all customers: %w", err)
 	}
 	defer rows.Close()
 	var customers []Customer
 	for rows.Next() {
-		var customer Customer
-		if err := rows.Scan(&customer.ID, &customer.TelegramID, &customer.ExpireAt, &customer.CreatedAt, &customer.SubscriptionLink, &customer.Language, &customer.IsTrial); err != nil {
+		var c Customer
+		if err := scanCustomer(rows, &c); err != nil {
 			return nil, fmt.Errorf("failed to scan customer row: %w", err)
 		}
-		customers = append(customers, customer)
+		customers = append(customers, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating customer rows: %w", err)
@@ -180,24 +180,22 @@ func (cr *CustomerRepository) FindAll(ctx context.Context) ([]Customer, error) {
 }
 
 func (cr *CustomerRepository) FindByTelegramIds(ctx context.Context, telegramIDs []int64) ([]Customer, error) {
-	buildSelect := sq.Select("id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial").
-		From("customer").Where(sq.Eq{"telegram_id": telegramIDs}).PlaceholderFormat(sq.Dollar)
-	sqlStr, args, err := buildSelect.ToSql()
+	sql, args, err := sq.Select(cols...).From("customer").Where(sq.Eq{"telegram_id": telegramIDs}).PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
-	rows, err := cr.pool.Query(ctx, sqlStr, args...)
+	rows, err := cr.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query customers: %w", err)
 	}
 	defer rows.Close()
 	var customers []Customer
 	for rows.Next() {
-		var customer Customer
-		if err := rows.Scan(&customer.ID, &customer.TelegramID, &customer.ExpireAt, &customer.CreatedAt, &customer.SubscriptionLink, &customer.Language, &customer.IsTrial); err != nil {
+		var c Customer
+		if err := scanCustomer(rows, &c); err != nil {
 			return nil, fmt.Errorf("failed to scan customer row: %w", err)
 		}
-		customers = append(customers, customer)
+		customers = append(customers, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating over customer rows: %w", err)
@@ -262,10 +260,11 @@ func (cr *CustomerRepository) UpdateBatch(ctx context.Context, customers []Custo
 }
 
 func (cr *CustomerRepository) DeleteByNotInTelegramIds(ctx context.Context, telegramIDs []int64) error {
-	var buildDelete sq.DeleteBuilder
 	if len(telegramIDs) == 0 {
-		buildDelete = sq.Delete("customer")
-	} else {
+		return fmt.Errorf("DeleteByNotInTelegramIds: refusing to delete all customers with empty ID list")
+	}
+	var buildDelete sq.DeleteBuilder
+	{
 		buildDelete = sq.Delete("customer").PlaceholderFormat(sq.Dollar).Where(sq.NotEq{"telegram_id": telegramIDs})
 	}
 	sqlStr, args, err := buildDelete.ToSql()
