@@ -60,5 +60,6 @@
   "devices_error": "❌ Failed to get device list. Please try again later.",
   "devices_reset_success_no_url": "✅ <b>All devices disconnected!</b>",
   "subscription_expired": "❌ Your subscription has expired.\n\nClick <b>«Buy»</b> to continue.",
-  "topup_trial_only": "⚠️ Additional traffic is only available on a paid subscription.\n\nThe trial period has a fixed traffic volume."
+  "topup_trial_only": "⚠️ Additional traffic is only available on a paid subscription.\n\nThe trial period has a fixed traffic volume.",
+  "next_traffic_reset": "🔄 Traffic reset: <b>%s</b>"
 }

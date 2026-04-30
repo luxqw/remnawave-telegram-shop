@@ -124,7 +124,7 @@ func buildConnectText(customer *database.Customer, langCode string, resetStrateg
 		info.WriteString(fmt.Sprintf(tm.GetText(langCode, "subscription_active"), formattedDate))
 
 		if nextReset := calcNextReset(resetStrategy, lastResetAt); nextReset != nil {
-			info.WriteString(fmt.Sprintf("\n🔄 Сброс трафика: <b>%s</b>", nextReset.Format("02.01.2006")))
+			info.WriteString("\n" + fmt.Sprintf(tm.GetText(langCode, "next_traffic_reset"), nextReset.Format("02.01.2006")))
 		}
 
 		if customer.SubscriptionLink != nil && *customer.SubscriptionLink != "" {
@@ -142,6 +142,7 @@ func buildConnectText(customer *database.Customer, langCode string, resetStrateg
 }
 
 // calcNextReset returns the next traffic reset date based on strategy and last reset time.
+// For rolling strategies it advances forward until the date is in the future.
 func calcNextReset(strategy string, lastResetAt *time.Time) *time.Time {
 	now := time.Now().UTC()
 	switch strings.ToUpper(strategy) {
@@ -152,13 +153,19 @@ func calcNextReset(strategy string, lastResetAt *time.Time) *time.Time {
 		if lastResetAt == nil {
 			return nil
 		}
-		next := lastResetAt.AddDate(0, 1, 0)
+		next := *lastResetAt
+		for !next.After(now) {
+			next = next.AddDate(0, 1, 0)
+		}
 		return &next
 	case "WEEK":
 		if lastResetAt == nil {
 			return nil
 		}
-		next := lastResetAt.AddDate(0, 0, 7)
+		next := *lastResetAt
+		for !next.After(now) {
+			next = next.AddDate(0, 0, 7)
+		}
 		return &next
 	case "DAY":
 		next := now.AddDate(0, 0, 1)

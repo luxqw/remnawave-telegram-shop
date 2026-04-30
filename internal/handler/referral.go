@@ -27,6 +27,19 @@ func (h Handler) ReferralCallbackHandler(ctx context.Context, b *bot.Bot, update
 	if msg := update.CallbackQuery.Message.Message; msg != nil && msg.From != nil {
 		botUsername = msg.From.Username
 	}
+	if botUsername == "" {
+		slog.Warn("referral: bot has no username, cannot generate referral link")
+		callbackMessage := update.CallbackQuery.Message.Message
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    callbackMessage.Chat.ID,
+			MessageID: callbackMessage.ID,
+			Text:      "❌ Реферальная ссылка временно недоступна.",
+			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+			}},
+		})
+		return
+	}
 	refLink := fmt.Sprintf("https://telegram.me/share/url?url=https://t.me/%s?start=ref_%d", botUsername, refCode)
 	count, err := h.referralRepository.CountByReferrer(ctx, customer.TelegramID)
 	if err != nil {
