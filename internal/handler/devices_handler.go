@@ -33,7 +33,7 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 	if err != nil || len(rwUsers) == 0 {
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID: chatID, MessageID: messageID, ParseMode: models.ParseModeHTML,
-			Text: h.translation.GetText(langCode, "devices_error"),
+			Text: "❌ Не удалось получить данные из панели. Попробуйте позже.",
 			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
 				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
 			}},
@@ -49,10 +49,10 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 	}
 
 	expireDate := expireAt.Format("02.01.2006")
-	var rows [][]models.InlineKeyboardButton
 
 	if len(devices) == 0 {
-		text := fmt.Sprintf(h.translation.GetText(langCode, "devices_empty"), expireDate)
+		text := fmt.Sprintf("📱 <b>Мои устройства</b>\n\n📅 Подписка до: <b>%s</b>\n\nНет подключённых устройств.\nПодключите устройство через кнопку «Подключиться».", expireDate)
+		var rows [][]models.InlineKeyboardButton
 		if config.GetMiniAppURL() != "" {
 			rows = append(rows, []models.InlineKeyboardButton{
 				h.translation.GetButton(langCode, "connect_button").InlineWebApp(config.GetMiniAppURL()),
@@ -66,15 +66,20 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 		return
 	}
 
-	text := fmt.Sprintf(h.translation.GetText(langCode, "devices_list_header"), expireDate, len(devices))
+	// Build message with device list as text
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("📱 <b>Мои устройства</b>\n\n📅 Подписка до: <b>%s</b>\nПодключено: <b>%d</b>\n\n", expireDate, len(devices)))
 	for i, d := range devices {
-		label := buildDeviceLabel(d)
-		// Use index in callback data to avoid 64-byte Telegram limit on HWID strings
+		sb.WriteString(fmt.Sprintf("<b>%d.</b> %s\n", i+1, buildDeviceDescription(d)))
+	}
+	sb.WriteString("\nНажмите кнопку устройства ниже, чтобы удалить его:")
+
+	// One delete button per device
+	var rows [][]models.InlineKeyboardButton
+	for i, d := range devices {
+		label := fmt.Sprintf("🗑️ Удалить #%d — %s", i+1, buildDeviceShortName(d))
 		delCallback := fmt.Sprintf("%s?i=%d", CallbackDevicesDeleteDevice, i)
-		rows = append(rows, []models.InlineKeyboardButton{
-			{Text: label, CallbackData: "noop"},
-			{Text: "🗑️", CallbackData: delCallback},
-		})
+		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: delCallback}})
 	}
 	rows = append(rows, []models.InlineKeyboardButton{
 		h.translation.GetButton(langCode, "devices_reset_button").InlineCallback(CallbackDevicesReset),
@@ -85,7 +90,7 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID: chatID, MessageID: messageID, ParseMode: models.ParseModeHTML,
-		Text: text, ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
+		Text: sb.String(), ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
 	})
 }
 
@@ -95,8 +100,7 @@ func (h Handler) DevicesDeleteDeviceCallbackHandler(ctx context.Context, b *bot.
 	msg := update.CallbackQuery.Message.Message
 
 	cbData := parseCallbackData(update.CallbackQuery.Data)
-	idxStr := cbData["i"]
-	idx, err := strconv.Atoi(idxStr)
+	idx, err := strconv.Atoi(cbData["i"])
 	if err != nil {
 		return
 	}
@@ -107,12 +111,11 @@ func (h Handler) DevicesDeleteDeviceCallbackHandler(ctx context.Context, b *bot.
 	}
 	rwUser := rwUsers[0]
 
-	// Fetch fresh device list - use index to identify device
 	devices, err := h.remnawaveClient.GetUserHwidDevices(ctx, rwUser.UUID)
 	if err != nil || idx >= len(devices) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
-			Text:            "❌ Устройство не найдено (список обновился)",
+			Text:            "❌ Список устройств изменился, обновите страницу",
 		})
 		return
 	}
@@ -136,7 +139,7 @@ func (h Handler) DevicesDeleteDeviceCallbackHandler(ctx context.Context, b *bot.
 	if customer != nil && customer.ExpireAt != nil {
 		h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, telegramID, *customer.ExpireAt)
 	}
-	slog.Info("devices: deleted hwid device", "telegram_id", telegramID, "hwid_prefix", hwid[:min(8, len(hwid))])
+	slog.Info("devices: deleted device", "telegram_id", telegramID, "index", idx)
 }
 
 func (h Handler) DevicesResetCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -162,9 +165,8 @@ func (h Handler) DevicesResetConfirmCallbackHandler(ctx context.Context, b *bot.
 	if err != nil || len(rwUsers) == 0 {
 		return
 	}
-	rwUser := rwUsers[0]
 
-	if err := h.remnawaveClient.DeleteAllUserHwidDevices(ctx, rwUser.UUID); err != nil {
+	if err := h.remnawaveClient.DeleteAllUserHwidDevices(ctx, rwUsers[0].UUID); err != nil {
 		slog.Error("devices: delete all hwid", "error", err)
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID: msg.Chat.ID, MessageID: msg.ID, ParseMode: models.ParseModeHTML,
@@ -197,23 +199,45 @@ func (h Handler) DevicesResetConfirmCallbackHandler(ctx context.Context, b *bot.
 	slog.Info("devices: all hwid devices deleted", "telegram_id", telegramID)
 }
 
-func buildDeviceLabel(d remnawave.HwidDevice) string {
+// buildDeviceDescription builds a full device description line for the message body.
+func buildDeviceDescription(d remnawave.HwidDevice) string {
 	var parts []string
 	if d.DeviceModel != nil && *d.DeviceModel != "" {
 		parts = append(parts, *d.DeviceModel)
 	}
-	if d.Platform != nil && *d.Platform != "" {
+	if d.OsVersion != nil && *d.OsVersion != "" {
+		parts = append(parts, *d.OsVersion)
+	} else if d.Platform != nil && *d.Platform != "" {
 		parts = append(parts, *d.Platform)
 	}
 	if len(parts) == 0 {
 		short := d.Hwid
-		if len(short) > 12 {
-			short = short[:12] + "..."
+		if len(short) > 16 {
+			short = short[:16] + "..."
 		}
 		return "📱 " + short
 	}
-	return "📱 " + strings.Join(parts, " ")
+	return "📱 " + strings.Join(parts, " · ")
 }
+
+// buildDeviceShortName returns a short name for use in a button label.
+func buildDeviceShortName(d remnawave.HwidDevice) string {
+	if d.DeviceModel != nil && *d.DeviceModel != "" {
+		name := *d.DeviceModel
+		if len(name) > 20 {
+			name = name[:20] + "…"
+		}
+		return name
+	}
+	if d.Platform != nil && *d.Platform != "" {
+		return *d.Platform
+	}
+	if len(d.Hwid) > 8 {
+		return d.Hwid[:8] + "…"
+	}
+	return d.Hwid
+}
+
 
 func formatTimeUntil(t time.Time) string {
 	d := time.Until(t)
@@ -225,11 +249,4 @@ func formatTimeUntil(t time.Time) string {
 		return "сегодня"
 	}
 	return fmt.Sprintf("через %d дн.", days)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
