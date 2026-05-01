@@ -61,6 +61,8 @@ func buildStatusText(customer *database.Customer, langCode string, resetStrategy
 		sb.WriteString(fmt.Sprintf(tm.GetText(langCode, "subscription_active"), customer.ExpireAt.Format("02.01.2006")))
 		if nextReset := calcNextReset(resetStrategy, lastResetAt); nextReset != nil {
 			sb.WriteString("\n" + fmt.Sprintf(tm.GetText(langCode, "next_traffic_reset"), nextReset.Format("02.01.2006")))
+		} else if strings.ToUpper(resetStrategy) == "NO_RESET" {
+			sb.WriteString("\n" + tm.GetText(langCode, "traffic_no_reset"))
 		}
 		if limitBytes > 0 {
 			usedGB := float64(usedBytes) / (1024 * 1024 * 1024)

@@ -65,5 +65,6 @@
   "status_button": { "text": "📊 My Status" },
   "status_header": "📊 <b>My Status</b>\n\n",
   "traffic_used": "📶 Used: <b>%.1f GB</b> of <b>%.1f GB</b>",
-  "topup_error": "❌ Failed to create request. Please try again later."
+  "topup_error": "❌ Failed to create request. Please try again later.",
+  "traffic_no_reset": "♾️ Traffic does not reset"
 }
