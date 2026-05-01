@@ -36,24 +36,21 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 			return
 		}
 
-		if strings.Contains(update.Message.Text, "ref_") {
-			arg := strings.Split(update.Message.Text, " ")[1]
-			if strings.HasPrefix(arg, "ref_") {
-				code := strings.TrimPrefix(arg, "ref_")
-				referrerId, err := strconv.ParseInt(code, 10, 64)
+		if parts := strings.SplitN(update.Message.Text, " ", 2); len(parts) == 2 && strings.HasPrefix(parts[1], "ref_") {
+			code := strings.TrimPrefix(parts[1], "ref_")
+			referrerId, err := strconv.ParseInt(code, 10, 64)
+			if err != nil {
+				slog.Error("error parsing referrer id", "error", err)
+				return
+			}
+			_, err = h.customerRepository.FindByTelegramId(ctx, referrerId)
+			if err == nil {
+				_, err := h.referralRepository.Create(ctx, referrerId, existingCustomer.TelegramID)
 				if err != nil {
-					slog.Error("error parsing referrer id", "error", err)
+					slog.Error("error creating referral", "error", err)
 					return
 				}
-				_, err = h.customerRepository.FindByTelegramId(ctx, referrerId)
-				if err == nil {
-					_, err := h.referralRepository.Create(ctx, referrerId, existingCustomer.TelegramID)
-					if err != nil {
-						slog.Error("error creating referral", "error", err)
-						return
-					}
-					slog.Info("referral created", "referrerId", utils.MaskHalfInt64(referrerId), "refereeId", utils.MaskHalfInt64(existingCustomer.TelegramID))
-				}
+				slog.Info("referral created", "referrerId", utils.MaskHalfInt64(referrerId), "refereeId", utils.MaskHalfInt64(existingCustomer.TelegramID))
 			}
 		}
 	} else {

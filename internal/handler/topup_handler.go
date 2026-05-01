@@ -58,7 +58,7 @@ func (h Handler) TopupCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		})
 		return
 	}
-	h.showTopupPackages(ctx, b, msg.Chat.ID, msg.ID, langCode, false)
+	h.showTopupPackages(ctx, b, msg.Chat.ID, msg.ID, langCode)
 }
 
 func (h Handler) TopupSelectCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -84,6 +84,14 @@ func (h Handler) TopupSelectCallbackHandler(ctx context.Context, b *bot.Bot, upd
 	})
 	if err != nil {
 		slog.Error("topup select: create pending record", "error", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID: msg.Chat.ID, MessageID: msg.ID, ParseMode: models.ParseModeHTML,
+			Text: h.translation.GetText(langCode, "topup_error"),
+			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+			}},
+		})
+		return
 	}
 	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb)
 	btnLabel := fmt.Sprintf("+%d ГБ", pkg.GBAmount)
@@ -111,10 +119,10 @@ func (h Handler) TopupCancelCallbackHandler(ctx context.Context, b *bot.Bot, upd
 			}
 		}
 	}
-	h.showTopupPackages(ctx, b, msg.Chat.ID, msg.ID, langCode, false)
+	h.showTopupPackages(ctx, b, msg.Chat.ID, msg.ID, langCode)
 }
 
-func (h Handler) showTopupPackages(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string, isEdit bool) {
+func (h Handler) showTopupPackages(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string) {
 	packages := config.AllTopupPackages()
 	var rows [][]models.InlineKeyboardButton
 	for _, pkg := range packages {

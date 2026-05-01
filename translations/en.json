@@ -64,5 +64,6 @@
   "next_traffic_reset": "🔄 Traffic reset: <b>%s</b>",
   "status_button": { "text": "📊 My Status" },
   "status_header": "📊 <b>My Status</b>\n\n",
-  "traffic_used": "📶 Used: <b>%.1f GB</b> of <b>%.1f GB</b>"
+  "traffic_used": "📶 Used: <b>%.1f GB</b> of <b>%.1f GB</b>",
+  "topup_error": "❌ Failed to create request. Please try again later."
 }
