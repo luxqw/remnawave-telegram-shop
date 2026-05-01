@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -65,9 +64,8 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 		}
 	}
 
-	resetStrategy, lastResetAt := h.fetchResetInfo(ctx, existingCustomer)
 	inlineKeyboard := h.buildStartKeyboard(existingCustomer, langCode)
-	greetingText := buildGreetingText(existingCustomer, langCode, resetStrategy, lastResetAt)
+	greetingText := buildGreetingText(existingCustomer, langCode)
 
 	m, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
@@ -116,9 +114,8 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 
-	resetStrategy, lastResetAt := h.fetchResetInfo(ctxWithTime, existingCustomer)
 	inlineKeyboard := h.buildStartKeyboard(existingCustomer, langCode)
-	greetingText := buildGreetingText(existingCustomer, langCode, resetStrategy, lastResetAt)
+	greetingText := buildGreetingText(existingCustomer, langCode)
 
 	_, err = b.EditMessageText(ctxWithTime, &bot.EditMessageTextParams{
 		ChatID:    callback.Message.Message.Chat.ID,
@@ -134,35 +131,10 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 	}
 }
 
-// fetchResetInfo fetches traffic strategy and last reset time from Remnawave.
-// Uses a fresh context so parent timeout doesn't race with DB calls.
-func (h Handler) fetchResetInfo(_ context.Context, customer *database.Customer) (resetStrategy string, lastResetAt *time.Time) {
-	if customer.SubscriptionLink == nil || customer.ExpireAt == nil || !customer.ExpireAt.After(time.Now()) {
-		return
-	}
-	rwCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(rwCtx, customer.TelegramID)
-	if err == nil && len(rwUsers) > 0 {
-		resetStrategy = rwUsers[0].TrafficLimitStrategy
-		lastResetAt = rwUsers[0].LastTrafficResetAt
-	}
-	return
-}
-
-// buildGreetingText returns a personalized greeting showing subscription status and next reset.
-func buildGreetingText(customer *database.Customer, langCode string, resetStrategy string, lastResetAt *time.Time) string {
+// buildGreetingText returns the greeting text. Subscription details are in the status screen.
+func buildGreetingText(customer *database.Customer, langCode string) string {
 	tm := translation.GetInstance()
-
-	if customer.SubscriptionLink != nil && customer.ExpireAt != nil && customer.ExpireAt.After(time.Now()) {
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf(tm.GetText(langCode, "subscription_active"), customer.ExpireAt.Format("02.01.2006")))
-		if nextReset := calcNextReset(resetStrategy, lastResetAt); nextReset != nil {
-			sb.WriteString("\n" + fmt.Sprintf(tm.GetText(langCode, "next_traffic_reset"), nextReset.Format("02.01.2006")))
-		}
-		sb.WriteString("\n\n" + tm.GetText(langCode, "greeting"))
-		return sb.String()
-	} else if customer.ExpireAt != nil {
+	if customer.ExpireAt != nil && !customer.ExpireAt.After(time.Now()) {
 		return tm.GetText(langCode, "subscription_expired") + "\n\n" + tm.GetText(langCode, "greeting")
 	}
 	return tm.GetText(langCode, "greeting")
@@ -196,6 +168,9 @@ func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCod
 	}
 
 	if existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) {
+		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+			h.translation.GetButton(langCode, "status_button").InlineCallback(CallbackStatus),
+		})
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
 			h.translation.GetButton(langCode, "devices_button").InlineCallback(CallbackDevices),
 		})
