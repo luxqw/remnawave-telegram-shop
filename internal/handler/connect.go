@@ -150,19 +150,21 @@ func calcNextReset(strategy string, lastResetAt *time.Time) *time.Time {
 		next := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
 		return &next
 	case "MONTH_ROLLING":
-		if lastResetAt == nil {
-			return nil
+		ref := now
+		if lastResetAt != nil {
+			ref = *lastResetAt
 		}
-		next := *lastResetAt
+		next := ref
 		for !next.After(now) {
 			next = next.AddDate(0, 1, 0)
 		}
 		return &next
 	case "WEEK":
-		if lastResetAt == nil {
-			return nil
+		ref := now
+		if lastResetAt != nil {
+			ref = *lastResetAt
 		}
-		next := *lastResetAt
+		next := ref
 		for !next.After(now) {
 			next = next.AddDate(0, 0, 7)
 		}
