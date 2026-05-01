@@ -44,6 +44,7 @@ func (h Handler) TopupCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 	pending, err := h.topupRepository.FindRecentPendingByTelegramID(ctx, telegramID, 30*time.Minute)
 	if err != nil {
 		slog.Error("topup: find recent pending", "error", err)
+		return
 	}
 	if pending != nil {
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
@@ -94,7 +95,7 @@ func (h Handler) TopupSelectCallbackHandler(ctx context.Context, b *bot.Bot, upd
 		return
 	}
 	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb)
-	btnLabel := fmt.Sprintf("+%d ГБ", pkg.GBAmount)
+	btnLabel := fmt.Sprintf("+%d GB", pkg.GBAmount)
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    msg.Chat.ID,
 		MessageID: msg.ID,
@@ -126,7 +127,7 @@ func (h Handler) showTopupPackages(ctx context.Context, b *bot.Bot, chatID int64
 	packages := config.AllTopupPackages()
 	var rows [][]models.InlineKeyboardButton
 	for _, pkg := range packages {
-		label := fmt.Sprintf("+%d ГБ", pkg.GBAmount)
+		label := fmt.Sprintf("+%d GB", pkg.GBAmount)
 		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: fmt.Sprintf("%s?gb=%d", CallbackTopupSelect, pkg.GBAmount)}})
 	}
 	rows = append(rows, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})

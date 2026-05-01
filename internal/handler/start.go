@@ -20,7 +20,7 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 	ctxWithTime, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	langCode := update.Message.From.LanguageCode
-	existingCustomer, err := h.customerRepository.FindByTelegramId(ctx, update.Message.Chat.ID)
+	existingCustomer, err := h.customerRepository.FindByTelegramId(ctxWithTime, update.Message.Chat.ID)
 	if err != nil {
 		slog.Error("error finding customer by telegram id", "error", err)
 		return
@@ -43,8 +43,8 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 				slog.Error("error parsing referrer id", "error", err)
 				return
 			}
-			_, err = h.customerRepository.FindByTelegramId(ctx, referrerId)
-			if err == nil {
+			referrer, err := h.customerRepository.FindByTelegramId(ctx, referrerId)
+			if err == nil && referrer != nil {
 				_, err := h.referralRepository.Create(ctx, referrerId, existingCustomer.TelegramID)
 				if err != nil {
 					slog.Error("error creating referral", "error", err)

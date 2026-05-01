@@ -132,27 +132,31 @@ func main() {
 		panic(err)
 	}
 
-	_, err = b.SetChatMenuButton(ctx, &bot.SetChatMenuButtonParams{
+	if _, err = b.SetChatMenuButton(ctx, &bot.SetChatMenuButtonParams{
 		MenuButton: &models.MenuButtonCommands{
 			Type: models.MenuButtonTypeCommands,
 		},
-	})
+	}); err != nil {
+		slog.Warn("bot setup: SetChatMenuButton failed", "error", err)
+	}
 
-	// Set bot commands for Russian
-	_, err = b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
+	if _, err = b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
 		Commands: []models.BotCommand{
 			{Command: "start", Description: "Начать работу с ботом"},
 		},
 		LanguageCode: "ru",
-	})
+	}); err != nil {
+		slog.Warn("bot setup: SetMyCommands (ru) failed", "error", err)
+	}
 
-	// Set bot commands for English
-	_, err = b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
+	if _, err = b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
 		Commands: []models.BotCommand{
 			{Command: "start", Description: "Start using the bot"},
 		},
 		LanguageCode: "en",
-	})
+	}); err != nil {
+		slog.Warn("bot setup: SetMyCommands (en) failed", "error", err)
+	}
 
 	config.SetBotURL(fmt.Sprintf("https://t.me/%s", me.Username))
 
@@ -243,7 +247,6 @@ func fullHealthHandler(pool *pgxpool.Pool, rw *remnawave.Client) http.Handler {
 		dbCtx, dbCancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer dbCancel()
 		if err := pool.Ping(dbCtx); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
 			status["status"] = "fail"
 			status["db"] = "error: " + err.Error()
 		}
@@ -251,16 +254,16 @@ func fullHealthHandler(pool *pgxpool.Pool, rw *remnawave.Client) http.Handler {
 		rwCtx, rwCancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer rwCancel()
 		if err := rw.Ping(rwCtx); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
 			status["status"] = "fail"
 			status["rw"] = "error: " + err.Error()
 		}
 
+		w.Header().Set("Content-Type", "application/json")
 		if status["status"] == "ok" {
 			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-
-		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"status":"%s","db":"%s","remnawave":"%s","time":"%s","version":"%s","commit":"%s","buildDate":"%s"}`,
 			status["status"], status["db"], status["rw"], status["time"], Version, Commit, BuildDate)
 	})
@@ -482,6 +485,10 @@ func checkCryptoPayInvoice(
 		if invoice.InvoiceID != nil && invoice.IsPaid() {
 			payload := strings.Split(invoice.Payload, "&")
 			purchaseID, err := strconv.Atoi(strings.Split(payload[0], "=")[1])
+			if err != nil {
+				slog.Error("crypto: invalid purchaseID in payload", "payload", payload[0], "error", err)
+				continue
+			}
 			username := strings.Split(payload[1], "=")[1]
 			ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, username)
 			err = paymentService.ProcessPurchaseById(ctxWithUsername, int64(purchaseID))

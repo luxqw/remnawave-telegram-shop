@@ -125,6 +125,8 @@ func buildConnectText(customer *database.Customer, langCode string, resetStrateg
 
 		if nextReset := calcNextReset(resetStrategy, lastResetAt); nextReset != nil {
 			info.WriteString("\n" + fmt.Sprintf(tm.GetText(langCode, "next_traffic_reset"), nextReset.Format("02.01.2006")))
+		} else if strings.ToUpper(resetStrategy) == "NO_RESET" {
+			info.WriteString("\n" + tm.GetText(langCode, "traffic_no_reset"))
 		}
 
 		if customer.SubscriptionLink != nil && *customer.SubscriptionLink != "" {

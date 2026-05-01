@@ -28,7 +28,7 @@ func (h Handler) StatusCallbackHandler(ctx context.Context, b *bot.Bot, update *
 	var lastResetAt *time.Time
 	var usedBytes, limitBytes int
 
-	rwCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	rwCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	if rwUsers, rwErr := h.remnawaveClient.GetUsersByTelegramID(rwCtx, telegramID); rwErr == nil && len(rwUsers) > 0 {
 		rw := rwUsers[0]
