@@ -123,6 +123,11 @@ func main() {
 	topupCleanupCron.Start()
 	defer topupCleanupCron.Stop()
 
+	topupIntegritySvc := notification.NewTopupIntegrityService(topupRepository, remnawaveClient)
+	topupIntegrityCron := setupTopupIntegrityCron(topupIntegritySvc)
+	topupIntegrityCron.Start()
+	defer topupIntegrityCron.Stop()
+
 	syncService := sync.NewSyncService(remnawaveClient, customerRepository)
 
 	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository)
@@ -307,6 +312,21 @@ func initDatabase(ctx context.Context, connString string) (*pgxpool.Pool, error)
 	return pgxpool.ConnectConfig(ctx, config)
 }
 
+func setupTopupIntegrityCron(svc *notification.TopupIntegrityService) *cron.Cron {
+	c := cron.New()
+	_, err := c.AddFunc("0 */6 * * *", func() { // every 6 hours
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := svc.CheckAndReapply(ctx); err != nil {
+			slog.Error("topup integrity cron error", "error", err)
+		}
+	})
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
 func setupTopupCleanup(topupRepository *database.TrafficTopupRepository) *cron.Cron {
 	c := cron.New()
 	_, err := c.AddFunc("0 * * * *", func() { // every hour
@@ -431,6 +451,7 @@ func checkYookasaInvoice(
 		purchaseId, err := strconv.Atoi(invoice.Metadata["purchaseId"])
 		if err != nil {
 			slog.Error("Error parsing purchaseId", "invoiceId", invoice.ID, "error", err)
+			continue
 		}
 		ctxWithValue := context.WithValue(ctx, remnawave.CtxKeyUsername, invoice.Metadata["username"])
 		err = paymentService.ProcessPurchaseById(ctxWithValue, int64(purchaseId))

@@ -150,6 +150,31 @@ func (r *TrafficTopupRepository) ExpireByID(ctx context.Context, id int64) error
 	return err
 }
 
+// FindAllLatestCompletedPerUser returns the most recent completed topup for each user
+// that has at least one. Used by the topup integrity job to detect and fix resets.
+func (r *TrafficTopupRepository) FindAllLatestCompletedPerUser(ctx context.Context) ([]*TrafficTopup, error) {
+	query := `SELECT DISTINCT ON (telegram_id) ` + topupSelectCols + `
+		FROM traffic_topups
+		WHERE status = 'completed' AND target_traffic_limit_bytes IS NOT NULL
+		ORDER BY telegram_id, completed_at DESC NULLS LAST`
+	rows, err := r.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("find all latest completed topups: %w", err)
+	}
+	defer rows.Close()
+	var result []*TrafficTopup
+	for rows.Next() {
+		t, err := scanTopup(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan topup row: %w", err)
+		}
+		if t != nil {
+			result = append(result, t)
+		}
+	}
+	return result, rows.Err()
+}
+
 // ExpireOldPending expires unattached pending records older than olderThan.
 func (r *TrafficTopupRepository) ExpireOldPending(ctx context.Context, olderThan time.Duration) (int64, error) {
 	query := `UPDATE traffic_topups SET status = 'expired'
