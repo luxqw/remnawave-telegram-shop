@@ -222,11 +222,12 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 		return nil
 	}
 
-	if strings.ToUpper(rwUser.Status) != "ACTIVE" {
-		slog.Warn("topup: user not active in Remnawave", "telegram_id", telegramID, "status", rwUser.Status)
+	status := strings.ToUpper(rwUser.Status)
+	if status != "ACTIVE" && status != "LIMITED" {
+		slog.Warn("topup: user not eligible in Remnawave", "telegram_id", telegramID, "status", rwUser.Status)
 		c.notifyUser(ctx, telegramID, "❌ Ошибка зачисления трафика: аккаунт не активен. Обратись в поддержку.")
-		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: user %d not active (status=%s), pkg=%dGB", telegramID, rwUser.Status, gbAmount))
-		return fmt.Errorf("topup: user %d not active: %s", telegramID, rwUser.Status)
+		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: user %d not eligible (status=%s), pkg=%dGB", telegramID, rwUser.Status, gbAmount))
+		return fmt.Errorf("topup: user %d not eligible: %s", telegramID, rwUser.Status)
 	}
 
 	targetBytes := int64(rwUser.TrafficLimitBytes) + int64(gbAmount)*int64(config.BytesInGigabyte())

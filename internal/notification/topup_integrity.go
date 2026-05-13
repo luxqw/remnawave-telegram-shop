@@ -1,9 +1,10 @@
-package notification
+﻿package notification
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"math"
 	"time"
 
@@ -67,8 +68,9 @@ func (s *TopupIntegrityService) CheckAndReapply(ctx context.Context) error {
 
 		user := users[0]
 
-		// Only restore for active users — do not re-enable disabled or expired accounts.
-		if user.Status != "ACTIVE" {
+		// Restore for ACTIVE and LIMITED users; skip DISABLED/EXPIRED.
+		userStatus := strings.ToUpper(user.Status)
+		if userStatus != "ACTIVE" && userStatus != "LIMITED" {
 			continue
 		}
 
