@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"math"
 	"net/http"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
@@ -195,10 +196,6 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 		slog.Info("topup: duplicate webhook, already completed", "tribute_payment_id", tributePaymentID)
 		return nil
 	}
-	if existing != nil && existing.Status == database.TopupStatusProcessing && existing.TargetTrafficLimitBytes != nil {
-		return c.applyTopup(ctx, existing.ID, existing.RemnawaveUUID, telegramID, *existing.TargetTrafficLimitBytes, gbAmount)
-	}
-
 	rwUsers, err := c.remnawaveClient.GetUsersByTelegramID(ctx, telegramID)
 	if err != nil {
 		return fmt.Errorf("topup: get remnawave user: %w", err)
@@ -209,6 +206,10 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 		return fmt.Errorf("topup: remnawave user not found for telegram_id %d", telegramID)
 	}
 	rwUser := rwUsers[0]
+
+	if existing != nil && existing.Status == database.TopupStatusProcessing && existing.TargetTrafficLimitBytes != nil {
+		return c.applyTopup(ctx, existing.ID, existing.RemnawaveUUID, telegramID, *existing.TargetTrafficLimitBytes, gbAmount, rwUser.TrafficLimitStrategy)
+	}
 
 	if rwUser.TrafficLimitBytes == 0 {
 		slog.Warn("topup: user has unlimited traffic, skipping", "telegram_id", telegramID)
@@ -260,15 +261,17 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 			topupID = id
 		}
 	}
-	return c.applyTopup(ctx, topupID, remnaUUID, telegramID, targetBytes, gbAmount)
+	return c.applyTopup(ctx, topupID, remnaUUID, telegramID, targetBytes, gbAmount, rwUser.TrafficLimitStrategy)
 }
 
-func (c *Client) applyTopup(ctx context.Context, topupID int64, remnaUUID string, telegramID int64, targetBytes int64, gbAmount int) error {
+func (c *Client) applyTopup(ctx context.Context, topupID int64, remnaUUID string, telegramID int64, targetBytes int64, gbAmount int, strategy string) error {
 	rwUUID, err := parseUUID(remnaUUID)
 	if err != nil {
 		return fmt.Errorf("topup: parse uuid %q: %w", remnaUUID, err)
 	}
-	strategy := config.TrafficLimitResetStrategy()
+	if targetBytes > math.MaxInt {
+		return fmt.Errorf("topup: target %d overflows int", targetBytes)
+	}
 	if err := c.remnawaveClient.UpdateUserTrafficLimit(ctx, rwUUID, int(targetBytes), strategy); err != nil {
 		_ = c.topupRepository.MarkFailed(ctx, topupID)
 		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: Remnawave UpdateUser failed for telegram_id=%d, pkg=%dGB: %v", telegramID, gbAmount, err))
