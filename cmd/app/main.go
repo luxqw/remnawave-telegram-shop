@@ -100,7 +100,7 @@ func main() {
 		panic(err)
 	}
 
-	paymentService := payment.NewPaymentService(tm, purchaseRepository, remnawaveClient, customerRepository, b, cryptoPayClient, yookasaClient, referralRepository, cache, moynalogClient)
+	paymentService := payment.NewPaymentService(tm, purchaseRepository, remnawaveClient, customerRepository, b, cryptoPayClient, yookasaClient, referralRepository, cache, moynalogClient, topupRepository)
 
 	cronScheduler := setupInvoiceChecker(purchaseRepository, cryptoPayClient, paymentService, yookasaClient)
 	if cronScheduler != nil {
@@ -170,6 +170,7 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/fix_traffic_strategy", bot.MatchTypePrefix, h.FixTrafficStrategyCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_user", bot.MatchTypePrefix, h.AdminUserCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_topup", bot.MatchTypePrefix, h.AdminTopupCommandHandler, isAdminMiddleware)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_topup_enroll", bot.MatchTypePrefix, h.AdminTopupEnrollCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_reset_devices", bot.MatchTypePrefix, h.AdminResetDevicesCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_broadcast", bot.MatchTypePrefix, h.AdminBroadcastCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_broadcast_test", bot.MatchTypePrefix, h.AdminBroadcastTestCommandHandler, isAdminMiddleware)

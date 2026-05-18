@@ -31,6 +31,7 @@ type PaymentService struct {
 	referralRepository *database.ReferralRepository
 	cache              *cache.Cache
 	moynalogClient     *moynalog.Client
+	topupRepository    *database.TrafficTopupRepository
 }
 
 func NewPaymentService(
@@ -44,6 +45,7 @@ func NewPaymentService(
 	referralRepository *database.ReferralRepository,
 	cache *cache.Cache,
 	moynalogClient *moynalog.Client,
+	topupRepository *database.TrafficTopupRepository,
 ) *PaymentService {
 	return &PaymentService{
 		purchaseRepository: purchaseRepository,
@@ -56,6 +58,7 @@ func NewPaymentService(
 		referralRepository: referralRepository,
 		cache:              cache,
 		moynalogClient:     moynalogClient,
+		topupRepository:    topupRepository,
 	}
 }
 
@@ -86,9 +89,39 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		}
 	}
 
-	user, err := s.remnawaveClient.CreateOrUpdateUser(ctx, customer.ID, customer.TelegramID, config.TrafficLimit(), purchase.Month*config.DaysInMonth(), false)
+	// calculateRollover reads the user's current usage from Remnawave before CreateOrUpdateUser
+	// resets the counter, which is the correct moment to snapshot "bytes consumed this period".
+	// On payment retry, the new rollover record created below will have a fresher completed_at
+	// than any prior record, so FindLatestCompletedByTelegramID will prefer it — preventing
+	// double-counting across retries.
+	rolloverBytes := s.calculateRollover(ctx, customer.TelegramID)
+	// Keep totalTrafficLimit as int64 until the API call that requires int.
+	totalTrafficLimitBytes := int64(config.TrafficLimit()) + rolloverBytes
+
+	user, err := s.remnawaveClient.CreateOrUpdateUser(ctx, customer.ID, customer.TelegramID, int(totalTrafficLimitBytes), purchase.Month*config.DaysInMonth(), false)
 	if err != nil {
 		return err
+	}
+
+	if rolloverBytes > 0 {
+		now := time.Now()
+		target := totalTrafficLimitBytes
+		rolloverGB := int(rolloverBytes / int64(config.BytesInGigabyte()))
+		if _, dbErr := s.topupRepository.Create(ctx, &database.TrafficTopup{
+			TelegramID:              customer.TelegramID,
+			RemnawaveUUID:           user.UUID.String(),
+			GBAmount:                rolloverGB,
+			Status:                  database.TopupStatusCompleted,
+			TargetTrafficLimitBytes: &target,
+			CompletedAt:             &now,
+		}); dbErr != nil {
+			slog.Error("rollover: create topup record", "telegram_id", customer.TelegramID, "error", dbErr)
+		}
+		slog.Info("rollover: carried unused topup to new period",
+			"telegram_id", customer.TelegramID,
+			"rollover_bytes", rolloverBytes,
+			"new_limit_bytes", totalTrafficLimitBytes,
+		)
 	}
 
 	err = s.purchaseRepository.MarkAsPaid(ctx, purchase.ID)
@@ -459,6 +492,53 @@ func (s PaymentService) createTributeInvoice(ctx context.Context, amount float64
 	}
 
 	return "", purchaseId, nil
+}
+
+// calculateRollover returns how many bytes of an existing admin topup remain unused
+// and should be carried into the next subscription period.
+//
+// Formula: rollover = topup_bytes - max(0, used_bytes - base_bytes)
+// where topup_bytes = target_limit - base_limit.
+func (s PaymentService) calculateRollover(ctx context.Context, telegramID int64) int64 {
+	if s.topupRepository == nil {
+		return 0
+	}
+	topup, err := s.topupRepository.FindLatestCompletedByTelegramID(ctx, telegramID)
+	if err != nil {
+		slog.Warn("rollover: find latest topup", "telegram_id", telegramID, "error", err)
+		return 0
+	}
+	if topup == nil || topup.TargetTrafficLimitBytes == nil {
+		return 0
+	}
+
+	baseBytes := int64(config.TrafficLimit())
+	topupBytes := *topup.TargetTrafficLimitBytes - baseBytes
+	if topupBytes <= 0 {
+		return 0
+	}
+
+	users, err := s.remnawaveClient.GetUsersByTelegramID(ctx, telegramID)
+	if err != nil || len(users) == 0 {
+		slog.Warn("rollover: cannot get remnawave user, skipping rollover", "telegram_id", telegramID, "error", err)
+		return 0
+	}
+
+	u := users[0]
+	if u.UserTraffic == nil || u.UserTraffic.UsedTrafficBytes == 0 {
+		return topupBytes
+	}
+
+	usedBeyondBase := int64(u.UserTraffic.UsedTrafficBytes) - baseBytes
+	if usedBeyondBase <= 0 {
+		return topupBytes
+	}
+
+	rollover := topupBytes - usedBeyondBase
+	if rollover <= 0 {
+		return 0
+	}
+	return rollover
 }
 
 func (s PaymentService) sendReceiptToMoynalog(ctx context.Context, purchase *database.Purchase) error {

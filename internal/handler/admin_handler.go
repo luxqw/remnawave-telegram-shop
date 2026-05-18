@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"remnawave-tg-shop-bot/internal/config"
+	"remnawave-tg-shop-bot/internal/database"
 )
 
 func (h Handler) AdminUserCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -67,7 +68,7 @@ func (h Handler) AdminUserCommandHandler(ctx context.Context, b *bot.Bot, update
 func (h Handler) AdminTopupCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 3 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_topup <telegram_id> <gb>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_topup <telegram_id> <gb>\nGB can be negative to subtract traffic.")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -76,8 +77,8 @@ func (h Handler) AdminTopupCommandHandler(ctx context.Context, b *bot.Bot, updat
 		return
 	}
 	gb, err := strconv.Atoi(parts[2])
-	if err != nil || gb <= 0 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid gb amount")
+	if err != nil || gb == 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid gb amount (must be non-zero)")
 		return
 	}
 	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
@@ -86,13 +87,114 @@ func (h Handler) AdminTopupCommandHandler(ctx context.Context, b *bot.Bot, updat
 		return
 	}
 	u := rwUsers[0]
-	newLimit := u.TrafficLimitBytes + gb*config.BytesInGigabyte()
-	if err := h.remnawaveClient.UpdateUserTrafficLimit(ctx, u.UUID, newLimit, config.TrafficLimitResetStrategy()); err != nil {
+
+	// Keep arithmetic in int64 to avoid overflow on large GB values.
+	delta := int64(gb) * int64(config.BytesInGigabyte())
+	newLimit := int64(u.TrafficLimitBytes) + delta
+	if newLimit < 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID,
+			fmt.Sprintf("❌ Нельзя: текущий лимит %d GB, вычитаете %d GB — результат отрицательный.",
+				u.TrafficLimitBytes/config.BytesInGigabyte(), -gb))
+		return
+	}
+
+	if err := h.remnawaveClient.UpdateUserTrafficLimit(ctx, u.UUID, int(newLimit), config.TrafficLimitResetStrategy()); err != nil {
 		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Failed: %v", err))
 		return
 	}
-	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("✅ +%d GB для %d\nНовый лимит: %d GB", gb, targetID, newLimit/config.BytesInGigabyte()))
-	slog.Info("admin topup: granted", "telegram_id", targetID, "gb", gb)
+
+	// TargetTrafficLimitBytes must always be the absolute post-topup limit (not a delta)
+	// so that calculateRollover and the integrity checker can compute correctly.
+	now := time.Now()
+	target := newLimit
+	reply := ""
+	if _, dbErr := h.topupRepository.Create(ctx, &database.TrafficTopup{
+		TelegramID:              targetID,
+		RemnawaveUUID:           u.UUID.String(),
+		GBAmount:                gb,
+		Status:                  database.TopupStatusCompleted,
+		TargetTrafficLimitBytes: &target,
+		CompletedAt:             &now,
+	}); dbErr != nil {
+		slog.Error("admin topup: create DB record", "telegram_id", targetID, "error", dbErr)
+		reply = "\n⚠️ DB-запись не создана — integrity check не восстановит лимит после сброса."
+	}
+
+	sign := "+"
+	if gb < 0 {
+		sign = ""
+	}
+	sendAdminReply(ctx, b, update.Message.Chat.ID,
+		fmt.Sprintf("✅ %s%d GB для %d\nНовый лимит: %d GB%s", sign, gb, targetID, newLimit/int64(config.BytesInGigabyte()), reply))
+	slog.Info("admin topup: applied", "telegram_id", targetID, "gb", gb, "new_limit_gb", newLimit/int64(config.BytesInGigabyte()))
+}
+
+func (h Handler) AdminTopupEnrollCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	parts := strings.Fields(update.Message.Text)
+	if len(parts) < 2 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_topup_enroll <telegram_id>")
+		return
+	}
+	targetID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
+		return
+	}
+
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
+	if err != nil || len(rwUsers) == 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
+		return
+	}
+	u := rwUsers[0]
+
+	currentLimitBytes := u.TrafficLimitBytes
+	baseLimitBytes := config.TrafficLimit()
+
+	if currentLimitBytes <= baseLimitBytes {
+		sendAdminReply(ctx, b, update.Message.Chat.ID,
+			fmt.Sprintf("ℹ️ Пользователь %d имеет базовый или меньший лимит (%d GB). Topup не нужен.",
+				targetID, currentLimitBytes/config.BytesInGigabyte()))
+		return
+	}
+
+	// If ANY completed topup record exists, the user is already enrolled — block re-enrollment
+	// to avoid creating competing rollover records with different targets.
+	existing, err := h.topupRepository.FindLatestCompletedByTelegramID(ctx, targetID)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("DB error: %v", err))
+		return
+	}
+	if existing != nil {
+		targetGB := 0
+		if existing.TargetTrafficLimitBytes != nil {
+			targetGB = int(*existing.TargetTrafficLimitBytes / int64(config.BytesInGigabyte()))
+		}
+		sendAdminReply(ctx, b, update.Message.Chat.ID,
+			fmt.Sprintf("ℹ️ Пользователь %d уже в системе (последний target: %d GB).\nЧтобы изменить — используй /admin_topup.", targetID, targetGB))
+		return
+	}
+
+	deltaGB := (currentLimitBytes - baseLimitBytes) / config.BytesInGigabyte()
+	now := time.Now()
+	target := int64(currentLimitBytes)
+	if _, dbErr := h.topupRepository.Create(ctx, &database.TrafficTopup{
+		TelegramID:              targetID,
+		RemnawaveUUID:           u.UUID.String(),
+		GBAmount:                deltaGB,
+		Status:                  database.TopupStatusCompleted,
+		TargetTrafficLimitBytes: &target,
+		CompletedAt:             &now,
+	}); dbErr != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("DB error: %v", dbErr))
+		return
+	}
+
+	sendAdminReply(ctx, b, update.Message.Chat.ID,
+		fmt.Sprintf("✅ Пользователь %d зачислён в систему topup\nЛимит: %d GB (базовый %d GB + %d GB extra)",
+			targetID, currentLimitBytes/config.BytesInGigabyte(),
+			baseLimitBytes/config.BytesInGigabyte(), deltaGB))
+	slog.Info("admin topup enroll", "telegram_id", targetID, "delta_gb", deltaGB)
 }
 
 func (h Handler) AdminResetDevicesCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -318,7 +420,8 @@ func (h Handler) AdminMenuCommandHandler(ctx context.Context, b *bot.Bot, update
 👤 <b>Пользователи:</b>
 <code>/admin_user &lt;id&gt;</code> — полный статус пользователя (подписка, трафик, устройства)
 <code>/admin_set_trial &lt;id&gt; on|off</code> — переключить тип: trial / оплачен
-<code>/admin_topup &lt;id&gt; &lt;gb&gt;</code> — добавить трафик без оплаты
+<code>/admin_topup &lt;id&gt; &lt;gb&gt;</code> — добавить/убрать трафик (gb может быть отрицательным)
+<code>/admin_topup_enroll &lt;id&gt;</code> — зачислить пользователя в систему rollover (для тех, кому уже добавляли трафик вручную)
 <code>/admin_reset_devices &lt;id&gt;</code> — удалить все HWID-устройства
 
 📢 <b>Рассылка:</b>

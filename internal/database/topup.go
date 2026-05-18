@@ -46,7 +46,7 @@ const topupSelectCols = `id, telegram_id, remnawave_uuid, gb_amount, price_amoun
 	tribute_payment_id, target_traffic_limit_bytes, status, created_at, completed_at`
 
 func scanTopup(row interface {
-	Scan(...interface{}) error
+	Scan(...any) error
 }) (*TrafficTopup, error) {
 	var t TrafficTopup
 	err := row.Scan(
@@ -65,13 +65,13 @@ func scanTopup(row interface {
 
 func (r *TrafficTopupRepository) Create(ctx context.Context, t *TrafficTopup) (int64, error) {
 	query := `INSERT INTO traffic_topups
-		(telegram_id, remnawave_uuid, gb_amount, price_amount, currency, tribute_payment_id, target_traffic_limit_bytes, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		(telegram_id, remnawave_uuid, gb_amount, price_amount, currency, tribute_payment_id, target_traffic_limit_bytes, status, completed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id`
 	var id int64
 	err := r.pool.QueryRow(ctx, query,
 		t.TelegramID, t.RemnawaveUUID, t.GBAmount, t.PriceAmount, t.Currency,
-		t.TributePaymentID, t.TargetTrafficLimitBytes, t.Status,
+		t.TributePaymentID, t.TargetTrafficLimitBytes, t.Status, t.CompletedAt,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("create topup: %w", err)
@@ -156,7 +156,7 @@ func (r *TrafficTopupRepository) FindAllLatestCompletedPerUser(ctx context.Conte
 	query := `SELECT DISTINCT ON (telegram_id) ` + topupSelectCols + `
 		FROM traffic_topups
 		WHERE status = 'completed' AND target_traffic_limit_bytes IS NOT NULL
-		ORDER BY telegram_id, completed_at DESC NULLS LAST`
+		ORDER BY telegram_id, completed_at DESC NULLS LAST, id DESC`
 	rows, err := r.pool.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("find all latest completed topups: %w", err)
@@ -173,6 +173,21 @@ func (r *TrafficTopupRepository) FindAllLatestCompletedPerUser(ctx context.Conte
 		}
 	}
 	return result, rows.Err()
+}
+
+// FindLatestCompletedByTelegramID returns the most recent completed topup for a single user.
+// Used by rollover logic to determine how many GB to carry into the next subscription period.
+// Returns nil (not an error) when no completed topup exists for the user.
+func (r *TrafficTopupRepository) FindLatestCompletedByTelegramID(ctx context.Context, telegramID int64) (*TrafficTopup, error) {
+	query := `SELECT ` + topupSelectCols + ` FROM traffic_topups
+		WHERE telegram_id = $1 AND status = 'completed' AND target_traffic_limit_bytes IS NOT NULL
+		ORDER BY completed_at DESC NULLS LAST, id DESC
+		LIMIT 1`
+	t, err := scanTopup(r.pool.QueryRow(ctx, query, telegramID))
+	if err != nil {
+		return nil, fmt.Errorf("find latest completed topup: %w", err)
+	}
+	return t, nil
 }
 
 // ExpireOldPending expires unattached pending records older than olderThan.
