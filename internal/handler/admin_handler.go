@@ -18,7 +18,7 @@ import (
 func (h Handler) AdminUserCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 2 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_user <telegram_id>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_user &lt;telegram_id&gt;")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -68,7 +68,7 @@ func (h Handler) AdminUserCommandHandler(ctx context.Context, b *bot.Bot, update
 func (h Handler) AdminTopupCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 3 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_topup <telegram_id> <gb>\nGB can be negative to subtract traffic.")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_topup &lt;telegram_id&gt; &lt;gb&gt;\nGB can be negative to subtract traffic.")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -132,7 +132,7 @@ func (h Handler) AdminTopupCommandHandler(ctx context.Context, b *bot.Bot, updat
 func (h Handler) AdminTopupEnrollCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 2 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_topup_enroll <telegram_id>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_topup_enroll &lt;telegram_id&gt;")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -200,7 +200,7 @@ func (h Handler) AdminTopupEnrollCommandHandler(ctx context.Context, b *bot.Bot,
 func (h Handler) AdminResetDevicesCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 2 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_reset_devices <telegram_id>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_reset_devices &lt;telegram_id&gt;")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -223,7 +223,7 @@ func (h Handler) AdminResetDevicesCommandHandler(ctx context.Context, b *bot.Bot
 func (h Handler) AdminBroadcastCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.SplitN(update.Message.Text, " ", 2)
 	if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_broadcast <message HTML>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_broadcast &lt;message HTML&gt;")
 		return
 	}
 	text := strings.TrimSpace(parts[1])
@@ -256,7 +256,7 @@ func (h Handler) AdminBroadcastCommandHandler(ctx context.Context, b *bot.Bot, u
 func (h Handler) AdminBroadcastTestCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.SplitN(update.Message.Text, " ", 2)
 	if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_broadcast_test <message HTML>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_broadcast_test &lt;message HTML&gt;")
 		return
 	}
 	text := strings.TrimSpace(parts[1])
@@ -267,7 +267,7 @@ func (h Handler) AdminBroadcastTestCommandHandler(ctx context.Context, b *bot.Bo
 func (h Handler) AdminExtendCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 3 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_extend <telegram_id> <days>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_extend &lt;telegram_id&gt; &lt;days&gt;")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -323,7 +323,7 @@ func (h Handler) AdminEnableCommandHandler(ctx context.Context, b *bot.Bot, upda
 func (h Handler) setRemnawaveStatus(ctx context.Context, b *bot.Bot, update *models.Update, status, userMsg string) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 2 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_disable or /admin_enable <telegram_id>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_disable or /admin_enable &lt;telegram_id&gt;")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -348,7 +348,7 @@ func (h Handler) setRemnawaveStatus(ctx context.Context, b *bot.Bot, update *mod
 func (h Handler) AdminResetTrafficCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 2 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_reset_traffic <telegram_id>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_reset_traffic &lt;telegram_id&gt;")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
@@ -441,7 +441,7 @@ func (h Handler) AdminMenuCommandHandler(ctx context.Context, b *bot.Bot, update
 func (h Handler) AdminSetTrialCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 3 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_set_trial <telegram_id> <on|off>")
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_set_trial &lt;telegram_id&gt; &lt;on|off&gt;")
 		return
 	}
 	targetID, err := strconv.ParseInt(parts[1], 10, 64)
