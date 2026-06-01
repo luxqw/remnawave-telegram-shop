@@ -123,6 +123,7 @@ func (h Handler) AdminPanelBcastCallback(ctx context.Context, b *bot.Bot, update
 		return
 	}
 	chatID := update.CallbackQuery.From.ID
+	h.adminSessions.Delete(chatID)
 	h.broadcastSessions.Store(chatID, broadcastWaitingForText)
 	sendAdminReply(ctx, b, chatID, "📢 <b>Рассылка</b>\n\nОтправь текст рассылки (поддерживается HTML-форматирование).\n\nДля отмены: /cancel")
 }
@@ -162,6 +163,7 @@ func (h Handler) AdminPanelUsersCallback(ctx context.Context, b *bot.Bot, update
 		return
 	}
 	chatID := update.CallbackQuery.From.ID
+	h.broadcastSessions.Delete(chatID)
 	h.setAdminSession(chatID, adminSession{Step: adminStepWaitUserID})
 	sendAdminReply(ctx, b, chatID, "👤 Введите Telegram ID пользователя:")
 }
@@ -481,15 +483,17 @@ func (h Handler) execExtend(ctx context.Context, b *bot.Bot, chatID, targetID in
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave error: %v", err))
 		return
 	}
+	dbNote := ""
 	if err := h.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{
 		"expire_at":         newUser.ExpireAt,
 		"subscription_link": newUser.SubscriptionUrl,
 	}); err != nil {
 		slog.Error("admin panel extend: update customer DB", "error", err)
+		dbNote = "\n⚠️ DB-запись не обновлена — бот не видит новую дату."
 	}
 	expireDate := newUser.ExpireAt.Format("02.01.2006")
 	sendAdminReply(ctx, b, chatID,
-		fmt.Sprintf("✅ Продлено на %d дн. для %d. Подписка до: %s", days, targetID, expireDate))
+		fmt.Sprintf("✅ Продлено на %d дн. для %d. Подписка до: %s%s", days, targetID, expireDate, dbNote))
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: targetID, ParseMode: models.ParseModeHTML,
 		Text: fmt.Sprintf("<b>Хорошие новости! Ваша подписка продлена на %d %s.</b>\n\nАктивна до: %s",
