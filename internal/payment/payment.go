@@ -103,6 +103,12 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		return err
 	}
 
+	// Reset the traffic counter so the new period starts from 0.
+	// Rollover was snapshotted above before this call, so the ordering is correct.
+	if resetErr := s.remnawaveClient.ResetUserTraffic(ctx, user.UUID); resetErr != nil {
+		slog.Error("renewal: failed to reset user traffic", "uuid", user.UUID, "telegram_id", customer.TelegramID, "error", resetErr)
+	}
+
 	if rolloverBytes > 0 {
 		now := time.Now()
 		target := totalTrafficLimitBytes

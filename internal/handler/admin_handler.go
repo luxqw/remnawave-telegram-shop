@@ -220,16 +220,74 @@ func (h Handler) AdminResetDevicesCommandHandler(ctx context.Context, b *bot.Bot
 	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("✅ Все устройства пользователя %d отключены (HWID очищен)", targetID))
 }
 
+// broadcastWaitingForText is the sentinel stored in broadcastSessions when the admin has
+// initiated a broadcast but hasn't sent the message text yet.
+const broadcastWaitingForText = "\x00waiting"
+
+// AdminBroadcastCommandHandler starts the two-step broadcast dialog.
 func (h Handler) AdminBroadcastCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	parts := strings.SplitN(update.Message.Text, " ", 2)
-	if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_broadcast &lt;message HTML&gt;")
+	chatID := update.Message.Chat.ID
+	h.broadcastSessions.Store(chatID, broadcastWaitingForText)
+	sendAdminReply(ctx, b, chatID, "📢 <b>Рассылка</b>\n\nОтправь текст рассылки (поддерживается HTML-форматирование).\n\nДля отмены: /cancel")
+}
+
+// IsBroadcastTextPending returns true when the admin started a broadcast session and the bot
+// is waiting for the message text. Used by the match func registered in main.go.
+func (h Handler) IsBroadcastTextPending(chatID int64) bool {
+	val, ok := h.broadcastSessions.Load(chatID)
+	if !ok {
+		return false
+	}
+	s, _ := val.(string)
+	return s == broadcastWaitingForText
+}
+
+// AdminBroadcastTextHandler captures the admin's message text, stores it, and shows a preview
+// with action buttons. Triggered by the match func registered in main.go.
+func (h Handler) AdminBroadcastTextHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	chatID := update.Message.Chat.ID
+	text := update.Message.Text
+	h.broadcastSessions.Store(chatID, text)
+
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      "📋 <b>Предпросмотр рассылки:</b>\n\n" + text + "\n\n━━━━━━━━━━━━━━\nВыбери действие:",
+		ParseMode: models.ParseModeHTML,
+		ReplyMarkup: models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: "✅ Отправить всем", CallbackData: CallbackBroadcastConfirm},
+					{Text: "🧪 Только мне", CallbackData: CallbackBroadcastTest},
+				},
+				{
+					{Text: "❌ Отменить", CallbackData: CallbackBroadcastCancel},
+				},
+			},
+		},
+	})
+	if err != nil {
+		slog.Error("broadcast: send preview", "error", err)
+	}
+}
+
+// AdminBroadcastConfirmCallback sends the stored message to all active subscribers.
+func (h Handler) AdminBroadcastConfirmCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.CallbackQuery == nil || update.CallbackQuery.From.ID != config.GetAdminTelegramId() {
 		return
 	}
-	text := strings.TrimSpace(parts[1])
+	chatID := update.CallbackQuery.From.ID
+	val, ok := h.broadcastSessions.LoadAndDelete(chatID)
+	if !ok {
+		return
+	}
+	text, _ := val.(string)
+	if text == "" || text == broadcastWaitingForText {
+		return
+	}
+
 	customers, err := h.customerRepository.FindAll(ctx)
 	if err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("DB error: %v", err))
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("DB error: %v", err))
 		return
 	}
 	sent, failed := 0, 0
@@ -246,22 +304,47 @@ func (h Handler) AdminBroadcastCommandHandler(ctx context.Context, b *bot.Bot, u
 		}
 		time.Sleep(40 * time.Millisecond)
 	}
-	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("✅ Рассылка завершена\nОтправлено: <b>%d</b>\nОшибок: <b>%d</b>", sent, failed))
+	sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Рассылка завершена\nОтправлено: <b>%d</b>\nОшибок: <b>%d</b>", sent, failed))
 	slog.Info("admin broadcast: done", "sent", sent, "failed", failed)
 }
 
-
-// AdminBroadcastTestCommandHandler handles /admin_broadcast_test <message>
-// Sends the broadcast message only to the admin for preview.
-func (h Handler) AdminBroadcastTestCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	parts := strings.SplitN(update.Message.Text, " ", 2)
-	if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_broadcast_test &lt;message HTML&gt;")
+// AdminBroadcastTestCallback sends the stored message only to the admin.
+// The session is kept alive so the admin can confirm a real send afterward.
+func (h Handler) AdminBroadcastTestCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.CallbackQuery == nil || update.CallbackQuery.From.ID != config.GetAdminTelegramId() {
 		return
 	}
-	text := strings.TrimSpace(parts[1])
-	preview := "🧪 <b>Preview (только ты видишь это):</b>\n\n" + text
-	sendAdminReply(ctx, b, update.Message.Chat.ID, preview)
+	chatID := update.CallbackQuery.From.ID
+	val, ok := h.broadcastSessions.Load(chatID)
+	if !ok {
+		return
+	}
+	text, _ := val.(string)
+	if text == "" || text == broadcastWaitingForText {
+		return
+	}
+	sendAdminReply(ctx, b, chatID, "🧪 <b>Тест (только ты видишь):</b>\n\n"+text)
+}
+
+// AdminBroadcastCancelCallback cancels the active broadcast session.
+func (h Handler) AdminBroadcastCancelCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.CallbackQuery == nil || update.CallbackQuery.From.ID != config.GetAdminTelegramId() {
+		return
+	}
+	chatID := update.CallbackQuery.From.ID
+	h.broadcastSessions.Delete(chatID)
+	sendAdminReply(ctx, b, chatID, "❌ Рассылка отменена.")
+}
+
+// AdminCancelCommandHandler handles /cancel — cancels any active admin dialog state.
+func (h Handler) AdminCancelCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	chatID := update.Message.Chat.ID
+	_, loaded := h.broadcastSessions.LoadAndDelete(chatID)
+	if loaded {
+		sendAdminReply(ctx, b, chatID, "❌ Рассылка отменена.")
+	} else {
+		sendAdminReply(ctx, b, chatID, "Нечего отменять.")
+	}
 }
 
 func (h Handler) AdminExtendCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -425,8 +508,8 @@ func (h Handler) AdminMenuCommandHandler(ctx context.Context, b *bot.Bot, update
 <code>/admin_reset_devices &lt;id&gt;</code> — удалить все HWID-устройства
 
 📢 <b>Рассылка:</b>
-<code>/admin_broadcast &lt;текст HTML&gt;</code> — всем с активной подпиской (async)
-<code>/admin_broadcast_test &lt;текст&gt;</code> — превью только тебе
+<code>/admin_broadcast</code> — диалог: отправь текст → предпросмотр → кнопки [Всем / Тест / Отменить]
+<code>/cancel</code> — отменить активный диалог рассылки
 
 🔧 <b>Система:</b>
 <code>/sync</code> — синхронизация базы с Remnawave

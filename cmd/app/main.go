@@ -172,8 +172,23 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_topup_enroll", bot.MatchTypePrefix, h.AdminTopupEnrollCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_topup", bot.MatchTypePrefix, h.AdminTopupCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_reset_devices", bot.MatchTypePrefix, h.AdminResetDevicesCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_broadcast", bot.MatchTypePrefix, h.AdminBroadcastCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_broadcast_test", bot.MatchTypePrefix, h.AdminBroadcastTestCommandHandler, isAdminMiddleware)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_broadcast", bot.MatchTypeExact, h.AdminBroadcastCommandHandler, isAdminMiddleware)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/cancel", bot.MatchTypeExact, h.AdminCancelCommandHandler, isAdminMiddleware)
+	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+		if update.Message == nil || update.Message.From == nil {
+			return false
+		}
+		if update.Message.From.ID != config.GetAdminTelegramId() {
+			return false
+		}
+		if strings.HasPrefix(update.Message.Text, "/") {
+			return false
+		}
+		return h.IsBroadcastTextPending(update.Message.Chat.ID)
+	}, h.AdminBroadcastTextHandler)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirm, bot.MatchTypeExact, h.AdminBroadcastConfirmCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastTest, bot.MatchTypeExact, h.AdminBroadcastTestCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastCancel, bot.MatchTypeExact, h.AdminBroadcastCancelCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin", bot.MatchTypeExact, h.AdminMenuCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_set_trial", bot.MatchTypePrefix, h.AdminSetTrialCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_extend", bot.MatchTypePrefix, h.AdminExtendCommandHandler, isAdminMiddleware)

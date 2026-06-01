@@ -17,4 +17,7 @@ const (
 	CallbackDevicesResetConfirm = "devices_reset_confirm"
 	CallbackDevicesDeleteDevice = "devices_del"
 	CallbackStatus              = "status"
+	CallbackBroadcastConfirm   = "bcast_confirm"
+	CallbackBroadcastTest      = "bcast_test"
+	CallbackBroadcastCancel    = "bcast_cancel"
 )

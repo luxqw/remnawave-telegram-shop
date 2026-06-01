@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"sync"
+
 	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/cryptopay"
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/payment"
 	"remnawave-tg-shop-bot/internal/remnawave"
-	"remnawave-tg-shop-bot/internal/sync"
+	isync "remnawave-tg-shop-bot/internal/sync"
 	"remnawave-tg-shop-bot/internal/translation"
 	"remnawave-tg-shop-bot/internal/yookasa"
 )
@@ -18,15 +20,18 @@ type Handler struct {
 	yookasaClient      *yookasa.Client
 	translation        *translation.Manager
 	paymentService     *payment.PaymentService
-	syncService        *sync.SyncService
+	syncService        *isync.SyncService
 	referralRepository *database.ReferralRepository
 	cache              *cache.Cache
 	remnawaveClient    *remnawave.Client
 	topupRepository    *database.TrafficTopupRepository
+	// broadcastSessions is a pointer so value-receiver methods all share the same map instance.
+	// key: admin chat ID (int64), value: string (broadcastWaitingForText sentinel or message text)
+	broadcastSessions *sync.Map
 }
 
 func NewHandler(
-	syncService *sync.SyncService,
+	syncService *isync.SyncService,
 	paymentService *payment.PaymentService,
 	translation *translation.Manager,
 	customerRepository *database.CustomerRepository,
@@ -50,5 +55,6 @@ func NewHandler(
 		cache:              cache,
 		remnawaveClient:    remnawaveClient,
 		topupRepository:    topupRepository,
+		broadcastSessions:  &sync.Map{},
 	}
 }
