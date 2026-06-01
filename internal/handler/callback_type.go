@@ -20,4 +20,17 @@ const (
 	CallbackBroadcastConfirm   = "bcast_confirm"
 	CallbackBroadcastTest      = "bcast_test"
 	CallbackBroadcastCancel    = "bcast_cancel"
+
+	CallbackAdminPanelMenu          = "ap_menu"
+	CallbackAdminPanelStats         = "ap_stats"
+	CallbackAdminPanelBcast         = "ap_bcast"
+	CallbackAdminPanelSystem        = "ap_sys"
+	CallbackAdminPanelSync          = "ap_sync"
+	CallbackAdminPanelUsers         = "ap_users"
+	CallbackAdminUserTopup          = "ap_user_topup"
+	CallbackAdminUserExtend         = "ap_user_extend"
+	CallbackAdminUserEnable         = "ap_user_enable"
+	CallbackAdminUserDisable        = "ap_user_disable"
+	CallbackAdminUserResetDevices   = "ap_user_reset_dev"
+	CallbackAdminUserResetTraffic   = "ap_user_reset_traffic"
 )

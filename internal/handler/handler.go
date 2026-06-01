@@ -25,9 +25,9 @@ type Handler struct {
 	cache              *cache.Cache
 	remnawaveClient    *remnawave.Client
 	topupRepository    *database.TrafficTopupRepository
-	// broadcastSessions is a pointer so value-receiver methods all share the same map instance.
-	// key: admin chat ID (int64), value: string (broadcastWaitingForText sentinel or message text)
+	// broadcastSessions and adminSessions are pointers so value-receiver methods share the same map.
 	broadcastSessions *sync.Map
+	adminSessions     *sync.Map
 }
 
 func NewHandler(
@@ -56,5 +56,6 @@ func NewHandler(
 		remnawaveClient:    remnawaveClient,
 		topupRepository:    topupRepository,
 		broadcastSessions:  &sync.Map{},
+		adminSessions:      &sync.Map{},
 	}
 }

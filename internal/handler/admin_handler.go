@@ -339,9 +339,10 @@ func (h Handler) AdminBroadcastCancelCallback(ctx context.Context, b *bot.Bot, u
 // AdminCancelCommandHandler handles /cancel — cancels any active admin dialog state.
 func (h Handler) AdminCancelCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	chatID := update.Message.Chat.ID
-	_, loaded := h.broadcastSessions.LoadAndDelete(chatID)
-	if loaded {
-		sendAdminReply(ctx, b, chatID, "❌ Рассылка отменена.")
+	_, bcast := h.broadcastSessions.LoadAndDelete(chatID)
+	_, panel := h.adminSessions.LoadAndDelete(chatID)
+	if bcast || panel {
+		sendAdminReply(ctx, b, chatID, "❌ Отменено.")
 	} else {
 		sendAdminReply(ctx, b, chatID, "Нечего отменять.")
 	}
@@ -495,28 +496,9 @@ func pluralDays(n int) string {
 }
 
 
-// AdminMenuCommandHandler handles /admin
-// Shows all available admin commands.
+// AdminMenuCommandHandler handles /admin — opens the interactive admin panel.
 func (h Handler) AdminMenuCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	text := `🛠 <b>Команды администратора</b>
-
-👤 <b>Пользователи:</b>
-<code>/admin_user &lt;id&gt;</code> — полный статус пользователя (подписка, трафик, устройства)
-<code>/admin_set_trial &lt;id&gt; on|off</code> — переключить тип: trial / оплачен
-<code>/admin_topup &lt;id&gt; &lt;gb&gt;</code> — добавить/убрать трафик (gb может быть отрицательным)
-<code>/admin_topup_enroll &lt;id&gt;</code> — зачислить пользователя в систему rollover (для тех, кому уже добавляли трафик вручную)
-<code>/admin_reset_devices &lt;id&gt;</code> — удалить все HWID-устройства
-
-📢 <b>Рассылка:</b>
-<code>/admin_broadcast</code> — диалог: отправь текст → предпросмотр → кнопки [Всем / Тест / Отменить]
-<code>/cancel</code> — отменить активный диалог рассылки
-
-🔧 <b>Система:</b>
-<code>/sync</code> — синхронизация базы с Remnawave
-<code>/fix_traffic_strategy preview</code> — показать текущие стратегии трафика
-<code>/fix_traffic_strategy apply</code> — применить стратегию ко всем пользователям`
-
-	sendAdminReply(ctx, b, update.Message.Chat.ID, text)
+	sendAdminPanel(ctx, b, update.Message.Chat.ID)
 }
 
 // AdminSetTrialCommandHandler handles /admin_set_trial <id> <on|off>

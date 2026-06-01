@@ -186,9 +186,33 @@ func main() {
 		}
 		return h.IsBroadcastTextPending(update.Message.Chat.ID)
 	}, h.AdminBroadcastTextHandler)
+	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+		if update.Message == nil || update.Message.From == nil {
+			return false
+		}
+		if update.Message.From.ID != config.GetAdminTelegramId() {
+			return false
+		}
+		if strings.HasPrefix(update.Message.Text, "/") {
+			return false
+		}
+		return h.IsAdminSessionActive(update.Message.Chat.ID)
+	}, h.AdminPanelTextHandler)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirm, bot.MatchTypeExact, h.AdminBroadcastConfirmCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastTest, bot.MatchTypeExact, h.AdminBroadcastTestCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastCancel, bot.MatchTypeExact, h.AdminBroadcastCancelCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelMenu, bot.MatchTypeExact, h.AdminPanelMenuCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelStats, bot.MatchTypeExact, h.AdminPanelStatsCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelBcast, bot.MatchTypeExact, h.AdminPanelBcastCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelSystem, bot.MatchTypeExact, h.AdminPanelSystemCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelSync, bot.MatchTypeExact, h.AdminPanelSyncCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelUsers, bot.MatchTypeExact, h.AdminPanelUsersCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserTopup, bot.MatchTypePrefix, h.AdminUserTopupCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserExtend, bot.MatchTypePrefix, h.AdminUserExtendCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserEnable, bot.MatchTypePrefix, h.AdminUserEnableCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserDisable, bot.MatchTypePrefix, h.AdminUserDisableCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserResetDevices, bot.MatchTypePrefix, h.AdminUserResetDevicesCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserResetTraffic, bot.MatchTypePrefix, h.AdminUserResetTrafficCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin", bot.MatchTypeExact, h.AdminMenuCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_set_trial", bot.MatchTypePrefix, h.AdminSetTrialCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_extend", bot.MatchTypePrefix, h.AdminExtendCommandHandler, isAdminMiddleware)
