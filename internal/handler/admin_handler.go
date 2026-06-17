@@ -261,7 +261,10 @@ func (h Handler) AdminBroadcastTextHandler(ctx context.Context, b *bot.Bot, upda
 					{Text: "🕓 Истёкшим", CallbackData: CallbackBroadcastConfirmExpired},
 				},
 				{
+					{Text: "🆕 Не покупавшим", CallbackData: CallbackBroadcastConfirmNew},
 					{Text: "💤 Неактивным", CallbackData: CallbackBroadcastConfirmInactive},
+				},
+				{
 					{Text: "👥 Всем", CallbackData: CallbackBroadcastConfirmAll},
 				},
 				{
@@ -304,6 +307,14 @@ func (h Handler) AdminBroadcastConfirmInactiveCallback(ctx context.Context, b *b
 	})
 }
 
+// AdminBroadcastConfirmNewCallback sends the stored message only to customers who never had a
+// subscription (ExpireAt == nil).
+func (h Handler) AdminBroadcastConfirmNewCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	h.runBroadcast(ctx, b, update, "new", func(c database.Customer, now time.Time) bool {
+		return c.ExpireAt == nil
+	})
+}
+
 // AdminBroadcastConfirmAllCallback sends the stored message to every customer in the database,
 // regardless of subscription state (active, expired, or never subscribed).
 func (h Handler) AdminBroadcastConfirmAllCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -312,8 +323,10 @@ func (h Handler) AdminBroadcastConfirmAllCallback(ctx context.Context, b *bot.Bo
 	})
 }
 
-// runBroadcast validates the admin session, loads customers, and sends the stored message to
-// every customer matching audience. segment is used only for logging.
+// runBroadcast validates the admin session, resolves the target audience, and kicks off delivery
+// in the background. Running the send loop in a goroutine lets the callback be answered
+// immediately (a long synchronous loop causes Telegram's "query is too old" error) and keeps the
+// admin UI responsive. segment is used only for logging.
 func (h Handler) runBroadcast(ctx context.Context, b *bot.Bot, update *models.Update, segment string, audience func(database.Customer, time.Time) bool) {
 	if update.CallbackQuery == nil || update.CallbackQuery.From.ID != config.GetAdminTelegramId() {
 		return
@@ -333,22 +346,59 @@ func (h Handler) runBroadcast(ctx context.Context, b *bot.Bot, update *models.Up
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("DB error: %v", err))
 		return
 	}
-	sent, failed := 0, 0
+
 	now := time.Now()
+	recipients := make([]int64, 0, len(customers))
 	for _, customer := range customers {
-		if !audience(customer, now) {
-			continue
+		if audience(customer, now) {
+			recipients = append(recipients, customer.TelegramID)
 		}
-		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: customer.TelegramID, Text: text, ParseMode: models.ParseModeHTML})
-		if err != nil {
-			failed++
-		} else {
+	}
+
+	sendAdminReply(ctx, b, chatID, fmt.Sprintf("🚀 Рассылка запущена\nПолучателей: <b>%d</b>\nРезультат пришлю по завершении.", len(recipients)))
+
+	// Detach from the request context so the loop isn't cancelled when the handler returns.
+	bgCtx := context.WithoutCancel(ctx)
+	go h.deliverBroadcast(bgCtx, b, chatID, text, segment, recipients)
+}
+
+// deliverBroadcast sends text to every recipient, throttling to stay within Telegram limits, and
+// reports a breakdown of failures back to the admin. Unreachable recipients (blocked the bot,
+// deactivated, or never opened a chat) are counted separately from unexpected errors.
+func (h Handler) deliverBroadcast(ctx context.Context, b *bot.Bot, chatID int64, text, segment string, recipients []int64) {
+	sent, unreachable, otherFailed := 0, 0, 0
+	for _, telegramID := range recipients {
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: telegramID, Text: text, ParseMode: models.ParseModeHTML})
+		switch {
+		case err == nil:
 			sent++
+		case isUserUnreachable(err):
+			unreachable++
+		default:
+			otherFailed++
+			slog.Warn("broadcast: send failed", "telegram_id", telegramID, "error", err)
 		}
 		time.Sleep(40 * time.Millisecond)
 	}
-	sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Рассылка завершена\nОтправлено: <b>%d</b>\nОшибок: <b>%d</b>", sent, failed))
-	slog.Info("admin broadcast: done", "segment", segment, "sent", sent, "failed", failed)
+	failed := unreachable + otherFailed
+	sendAdminReply(ctx, b, chatID, fmt.Sprintf(
+		"✅ Рассылка завершена\nОтправлено: <b>%d</b>\nОшибок: <b>%d</b>\n• недоступны/заблокировали: %d\n• прочее: %d",
+		sent, failed, unreachable, otherFailed))
+	slog.Info("admin broadcast: done", "segment", segment, "sent", sent, "failed", failed, "unreachable", unreachable, "other", otherFailed)
+}
+
+// isUserUnreachable reports whether a SendMessage error means the recipient can't be reached
+// (blocked the bot, deactivated their account, or never started a chat). These are expected for
+// cold audiences and are not actionable bugs.
+func isUserUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "forbidden") ||
+		strings.Contains(msg, "bot was blocked") ||
+		strings.Contains(msg, "user is deactivated") ||
+		strings.Contains(msg, "chat not found")
 }
 
 // AdminBroadcastTestCallback sends the stored message only to the admin.

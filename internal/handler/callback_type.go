@@ -20,6 +20,7 @@ const (
 	CallbackBroadcastConfirm         = "bcast_confirm"
 	CallbackBroadcastConfirmExpired  = "bcast_confirm_exp"
 	CallbackBroadcastConfirmInactive = "bcast_confirm_inact"
+	CallbackBroadcastConfirmNew      = "bcast_confirm_new"
 	CallbackBroadcastConfirmAll      = "bcast_confirm_all"
 	CallbackBroadcastTest            = "bcast_test"
 	CallbackBroadcastCancel          = "bcast_cancel"
