@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -199,6 +199,8 @@ func main() {
 		return h.IsAdminSessionActive(update.Message.Chat.ID)
 	}, h.AdminPanelTextHandler)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirm, bot.MatchTypeExact, h.AdminBroadcastConfirmCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmExpired, bot.MatchTypeExact, h.AdminBroadcastConfirmExpiredCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmAll, bot.MatchTypeExact, h.AdminBroadcastConfirmAllCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastTest, bot.MatchTypeExact, h.AdminBroadcastTestCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastCancel, bot.MatchTypeExact, h.AdminBroadcastCancelCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelMenu, bot.MatchTypeExact, h.AdminPanelMenuCallback, h.AnswerCallbackQueryMiddleware)
@@ -563,6 +565,3 @@ func checkCryptoPayInvoice(
 	}
 
 }
-
-
-

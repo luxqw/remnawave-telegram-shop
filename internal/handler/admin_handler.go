@@ -257,7 +257,13 @@ func (h Handler) AdminBroadcastTextHandler(ctx context.Context, b *bot.Bot, upda
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "✅ Отправить всем", CallbackData: CallbackBroadcastConfirm},
+					{Text: "✅ Активным", CallbackData: CallbackBroadcastConfirm},
+					{Text: "🕓 Истёкшим", CallbackData: CallbackBroadcastConfirmExpired},
+				},
+				{
+					{Text: "👥 Всем", CallbackData: CallbackBroadcastConfirmAll},
+				},
+				{
 					{Text: "🧪 Только мне", CallbackData: CallbackBroadcastTest},
 				},
 				{
@@ -271,8 +277,34 @@ func (h Handler) AdminBroadcastTextHandler(ctx context.Context, b *bot.Bot, upda
 	}
 }
 
-// AdminBroadcastConfirmCallback sends the stored message to all active subscribers.
+// AdminBroadcastConfirmCallback sends the stored message to all active subscribers
+// (ExpireAt set and not yet passed).
 func (h Handler) AdminBroadcastConfirmCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	h.runBroadcast(ctx, b, update, "active", func(c database.Customer, now time.Time) bool {
+		return c.ExpireAt != nil && !c.ExpireAt.Before(now)
+	})
+}
+
+// AdminBroadcastConfirmExpiredCallback sends the stored message to subscribers whose
+// subscription has expired (ExpireAt set and already in the past). Users who never had a
+// subscription (ExpireAt == nil) are excluded.
+func (h Handler) AdminBroadcastConfirmExpiredCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	h.runBroadcast(ctx, b, update, "expired", func(c database.Customer, now time.Time) bool {
+		return c.ExpireAt != nil && c.ExpireAt.Before(now)
+	})
+}
+
+// AdminBroadcastConfirmAllCallback sends the stored message to every customer in the database,
+// regardless of subscription state (active, expired, or never subscribed).
+func (h Handler) AdminBroadcastConfirmAllCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	h.runBroadcast(ctx, b, update, "all", func(c database.Customer, now time.Time) bool {
+		return true
+	})
+}
+
+// runBroadcast validates the admin session, loads customers, and sends the stored message to
+// every customer matching audience. segment is used only for logging.
+func (h Handler) runBroadcast(ctx context.Context, b *bot.Bot, update *models.Update, segment string, audience func(database.Customer, time.Time) bool) {
 	if update.CallbackQuery == nil || update.CallbackQuery.From.ID != config.GetAdminTelegramId() {
 		return
 	}
@@ -294,7 +326,7 @@ func (h Handler) AdminBroadcastConfirmCallback(ctx context.Context, b *bot.Bot, 
 	sent, failed := 0, 0
 	now := time.Now()
 	for _, customer := range customers {
-		if customer.ExpireAt == nil || customer.ExpireAt.Before(now) {
+		if !audience(customer, now) {
 			continue
 		}
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: customer.TelegramID, Text: text, ParseMode: models.ParseModeHTML})
@@ -306,7 +338,7 @@ func (h Handler) AdminBroadcastConfirmCallback(ctx context.Context, b *bot.Bot, 
 		time.Sleep(40 * time.Millisecond)
 	}
 	sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Рассылка завершена\nОтправлено: <b>%d</b>\nОшибок: <b>%d</b>", sent, failed))
-	slog.Info("admin broadcast: done", "sent", sent, "failed", failed)
+	slog.Info("admin broadcast: done", "segment", segment, "sent", sent, "failed", failed)
 }
 
 // AdminBroadcastTestCallback sends the stored message only to the admin.
@@ -497,7 +529,6 @@ func pluralDays(n int) string {
 		return "дней"
 	}
 }
-
 
 // AdminMenuCommandHandler handles /admin — opens the interactive admin panel.
 func (h Handler) AdminMenuCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
