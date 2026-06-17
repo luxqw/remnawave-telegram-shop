@@ -261,6 +261,7 @@ func (h Handler) AdminBroadcastTextHandler(ctx context.Context, b *bot.Bot, upda
 					{Text: "🕓 Истёкшим", CallbackData: CallbackBroadcastConfirmExpired},
 				},
 				{
+					{Text: "💤 Неактивным", CallbackData: CallbackBroadcastConfirmInactive},
 					{Text: "👥 Всем", CallbackData: CallbackBroadcastConfirmAll},
 				},
 				{
@@ -291,6 +292,15 @@ func (h Handler) AdminBroadcastConfirmCallback(ctx context.Context, b *bot.Bot, 
 func (h Handler) AdminBroadcastConfirmExpiredCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
 	h.runBroadcast(ctx, b, update, "expired", func(c database.Customer, now time.Time) bool {
 		return c.ExpireAt != nil && c.ExpireAt.Before(now)
+	})
+}
+
+// AdminBroadcastConfirmInactiveCallback sends the stored message to every customer who is not a
+// current active subscriber: expired subscriptions (ExpireAt in the past) plus customers who
+// never subscribed (ExpireAt == nil).
+func (h Handler) AdminBroadcastConfirmInactiveCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	h.runBroadcast(ctx, b, update, "inactive", func(c database.Customer, now time.Time) bool {
+		return c.ExpireAt == nil || c.ExpireAt.Before(now)
 	})
 }
 

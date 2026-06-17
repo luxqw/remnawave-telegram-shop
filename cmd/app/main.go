@@ -200,6 +200,7 @@ func main() {
 	}, h.AdminPanelTextHandler)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirm, bot.MatchTypeExact, h.AdminBroadcastConfirmCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmExpired, bot.MatchTypeExact, h.AdminBroadcastConfirmExpiredCallback, h.AnswerCallbackQueryMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmInactive, bot.MatchTypeExact, h.AdminBroadcastConfirmInactiveCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmAll, bot.MatchTypeExact, h.AdminBroadcastConfirmAllCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastTest, bot.MatchTypeExact, h.AdminBroadcastTestCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastCancel, bot.MatchTypeExact, h.AdminBroadcastCancelCallback, h.AnswerCallbackQueryMiddleware)
