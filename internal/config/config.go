@@ -61,6 +61,7 @@ type config struct {
 	trialTrafficLimitResetStrategy                            string
 	trafficLimitResetStrategy                                 string
 	topupEnabled                                              bool
+	statusEnabled                                             bool
 	topupPackage10                                            TopupPackageConfig
 	topupPackage25                                            TopupPackageConfig
 	topupPackage50                                            TopupPackageConfig
@@ -302,6 +303,10 @@ func TrafficLimitResetStrategy() string {
 
 func TopupEnabled() bool {
 	return conf.topupEnabled
+}
+
+func StatusEnabled() bool {
+	return conf.statusEnabled
 }
 
 func AllTopupPackages() []TopupPackageConfig {
@@ -632,6 +637,7 @@ func InitConfig() {
 	}
 
 	conf.topupEnabled = envBool("TOPUP_ENABLED")
+	conf.statusEnabled = envBool("STATUS_ENABLED")
 	if conf.topupEnabled {
 		conf.topupPackage10 = parseTopupPackage("10")
 		conf.topupPackage25 = parseTopupPackage("25")

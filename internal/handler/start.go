@@ -165,9 +165,11 @@ func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCod
 	}
 
 	if existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			h.translation.GetButton(langCode, "status_button").InlineCallback(CallbackStatus),
-		})
+		if config.StatusEnabled() {
+			inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
+				h.translation.GetButton(langCode, "status_button").InlineCallback(CallbackStatus),
+			})
+		}
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
 			h.translation.GetButton(langCode, "devices_button").InlineCallback(CallbackDevices),
 		})

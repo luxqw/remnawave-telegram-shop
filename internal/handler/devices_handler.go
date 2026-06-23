@@ -64,7 +64,6 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 		return
 	}
 
-	// Build device list (subscription info is already in /start greeting — no need to repeat)
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("📱 <b>Мои устройства</b>\n\nПодключено: <b>%d</b>\n\n", len(devices)))
 	for i, d := range devices {
@@ -197,6 +196,18 @@ func (h Handler) DevicesResetConfirmCallbackHandler(ctx context.Context, b *bot.
 	slog.Info("devices: all hwid devices deleted", "telegram_id", telegramID)
 }
 
+func formatTimeUntil(t time.Time) string {
+	d := time.Until(t)
+	if d < 0 {
+		return "истекла"
+	}
+	days := int(d.Hours() / 24)
+	if days == 0 {
+		return "сегодня"
+	}
+	return fmt.Sprintf("через %d дн.", days)
+}
+
 // buildDeviceDescription builds a full device description line for the message body.
 func buildDeviceDescription(idx int, d remnawave.HwidDevice) string {
 	var parts []string
@@ -229,15 +240,3 @@ func buildDeviceShortName(idx int, d remnawave.HwidDevice) string {
 	return fmt.Sprintf("устройство #%d", idx+1)
 }
 
-
-func formatTimeUntil(t time.Time) string {
-	d := time.Until(t)
-	if d < 0 {
-		return "истекла"
-	}
-	days := int(d.Hours() / 24)
-	if days == 0 {
-		return "сегодня"
-	}
-	return fmt.Sprintf("через %d дн.", days)
-}
