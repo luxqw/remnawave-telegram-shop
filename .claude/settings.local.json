@@ -5,7 +5,20 @@
       "WebFetch(domain:remnawave.github.io)",
       "WebFetch(domain:docs.remnawave.com)",
       "WebFetch(domain:github.com)",
-      "PowerShell(docker compose build *)"
+      "PowerShell(docker compose build *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'fix\\(reset\\): fallback to now as base for MONTH_ROLLING/WEEK when lastResetAt is nil *)",
+      "Bash(git push *)",
+      "Bash(go vet *)",
+      "Bash(go build *)",
+      "Bash(git commit -m 'fix\\(topup\\): allow topup for LIMITED users *)",
+      "Bash(go test *)",
+      "Bash(staticcheck ./...)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit *)",
+      "Bash(gofmt -l internal/handler/admin_handler.go internal/handler/callback_type.go cmd/app/main.go)",
+      "Bash(gofmt -w internal/handler/admin_handler.go internal/handler/callback_type.go cmd/app/main.go)",
+      "WebFetch(domain:cardlink.link)"
     ]
   }
 }

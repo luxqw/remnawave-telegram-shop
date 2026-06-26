@@ -158,7 +158,7 @@ func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCod
 		inlineKeyboard = append(inlineKeyboard, h.resolveConnectButton(langCode))
 	}
 
-	if config.TopupEnabled() && existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) && !existingCustomer.IsTrial {
+	if (config.TopupEnabled() || config.CardlinkTopupEnabled()) && existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) && !existingCustomer.IsTrial {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
 			h.translation.GetButton(langCode, "topup_button").InlineCallback(CallbackTopup),
 		})

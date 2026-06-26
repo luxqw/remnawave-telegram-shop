@@ -10,6 +10,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"remnawave-tg-shop-bot/internal/cardlink"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
 )
@@ -73,6 +74,12 @@ func (h Handler) TopupSelectCallbackHandler(ctx context.Context, b *bot.Bot, upd
 		slog.Error("topup select: invalid gb param", "data", update.CallbackQuery.Data, "error", err)
 		return
 	}
+
+	if config.CardlinkTopupEnabled() && h.cardlinkClient != nil {
+		h.topupSelectCardlink(ctx, b, msg, telegramID, langCode, gb)
+		return
+	}
+
 	pkg := config.TopupPackageByGB(gb)
 	if pkg == nil {
 		slog.Error("topup select: unknown gb amount", "gb", gb)
@@ -108,14 +115,97 @@ func (h Handler) TopupSelectCallbackHandler(ctx context.Context, b *bot.Bot, upd
 	})
 }
 
+func (h Handler) topupSelectCardlink(ctx context.Context, b *bot.Bot, msg *models.Message, telegramID int64, langCode string, gb int) {
+	price := config.CardlinkTopupPrice(gb)
+	if price <= 0 {
+		slog.Error("topup select: no cardlink price configured or invalid gb", "gb", gb)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID: msg.Chat.ID, MessageID: msg.ID, ParseMode: models.ParseModeHTML,
+			Text: h.translation.GetText(langCode, "topup_error"),
+			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+			}},
+		})
+		return
+	}
+
+	topupID, err := h.topupRepository.Create(ctx, &database.TrafficTopup{
+		TelegramID:  telegramID,
+		GBAmount:    gb,
+		PriceAmount: float64(price),
+		Currency:    "RUB",
+		Status:      database.TopupStatusPending,
+	})
+	if err != nil {
+		slog.Error("topup select cardlink: create pending record", "error", err)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID: msg.Chat.ID, MessageID: msg.ID, ParseMode: models.ParseModeHTML,
+			Text: h.translation.GetText(langCode, "topup_error"),
+			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+			}},
+		})
+		return
+	}
+
+	bill, err := h.cardlinkClient.CreateBill(ctx, &cardlink.CreateBillRequest{
+		Amount:      fmt.Sprintf("%d", price),
+		ShopID:      config.CardlinkShopID(),
+		OrderID:     fmt.Sprintf("topup_%d", topupID),
+		Description: fmt.Sprintf("+%d GB", gb),
+		CurrencyIn:  "RUB",
+		TTL:         1800,
+		Custom:      fmt.Sprintf("telegram_id=%d&topup_id=%d", telegramID, topupID),
+	})
+	if err != nil {
+		slog.Error("topup select cardlink: create bill", "error", err)
+		_ = h.topupRepository.MarkFailed(ctx, topupID)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID: msg.Chat.ID, MessageID: msg.ID, ParseMode: models.ParseModeHTML,
+			Text: h.translation.GetText(langCode, "topup_error"),
+			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+			}},
+		})
+		return
+	}
+
+	if err := h.topupRepository.SetCardlinkBillID(ctx, topupID, bill.BillID); err != nil {
+		slog.Error("topup select cardlink: save bill id", "error", err)
+		_ = h.topupRepository.MarkFailed(ctx, topupID)
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID: msg.Chat.ID, MessageID: msg.ID, ParseMode: models.ParseModeHTML,
+			Text: h.translation.GetText(langCode, "topup_error"),
+			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+			}},
+		})
+		return
+	}
+
+	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb)
+	btnLabel := fmt.Sprintf("+%d GB", gb)
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    msg.Chat.ID,
+		MessageID: msg.ID,
+		ParseMode: models.ParseModeHTML,
+		Text:      disclaimer,
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+			{{Text: btnLabel, URL: bill.LinkPageURL}},
+			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackTopup)},
+		}},
+	})
+}
+
 func (h Handler) TopupCancelCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	telegramID := update.CallbackQuery.From.ID
 	langCode := update.CallbackQuery.From.LanguageCode
 	msg := update.CallbackQuery.Message.Message
 	cbData := parseCallbackData(update.CallbackQuery.Data)
 	if idStr, ok := cbData["id"]; ok {
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err == nil {
-			if err := h.topupRepository.ExpireByID(ctx, id); err != nil {
+			if err := h.topupRepository.ExpireByID(ctx, id, telegramID); err != nil {
 				slog.Error("topup cancel: expire record", "id", id, "error", err)
 			}
 		}
@@ -124,11 +214,19 @@ func (h Handler) TopupCancelCallbackHandler(ctx context.Context, b *bot.Bot, upd
 }
 
 func (h Handler) showTopupPackages(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string) {
-	packages := config.AllTopupPackages()
+	var gbAmounts []int
+	if config.CardlinkTopupEnabled() {
+		gbAmounts = config.CardlinkTopupPackages()
+	} else {
+		for _, pkg := range config.AllTopupPackages() {
+			gbAmounts = append(gbAmounts, pkg.GBAmount)
+		}
+	}
+
 	var rows [][]models.InlineKeyboardButton
-	for _, pkg := range packages {
-		label := fmt.Sprintf("+%d GB", pkg.GBAmount)
-		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: fmt.Sprintf("%s?gb=%d", CallbackTopupSelect, pkg.GBAmount)}})
+	for _, gb := range gbAmounts {
+		label := fmt.Sprintf("+%d GB", gb)
+		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: fmt.Sprintf("%s?gb=%d", CallbackTopupSelect, gb)}})
 	}
 	rows = append(rows, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{

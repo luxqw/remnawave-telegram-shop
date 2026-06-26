@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - fork v1.0.21
+
+### Added
+- **Cardlink payment integration** for traffic top-ups (`CARDLINK_TOPUP_ENABLED`, `CARDLINK_API_TOKEN`, `CARDLINK_SHOP_ID`, `CARDLINK_BASE_URL`, `CARDLINK_TOPUP_PRICE_10GB/25GB/50GB`) — card payment alternative to Tribute for top-up packages
+- **Admin broadcast audience segments**: all users, expired subscribers, inactive (expired + never subscribed), never-subscribed segment
+- **Background broadcast delivery** with per-segment failure breakdown reporting
+- **Interactive admin panel** (`/admin` inline keyboard) for common admin operations
+- `STATUS_ENABLED` env var to toggle the status button independently of `SERVER_STATUS_URL`
+
+### Changed
+- Broadcast and admin panel sessions are mutually exclusive to prevent state conflicts
+- Admin panel surfaces DB errors on subscription extend operations
+
 ## [3.4.1] - 2025-11-08
 
 ### Added

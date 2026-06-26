@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"remnawave-tg-shop-bot/internal/cache"
+	"remnawave-tg-shop-bot/internal/cardlink"
 	"remnawave-tg-shop-bot/internal/cryptopay"
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/payment"
@@ -25,6 +26,7 @@ type Handler struct {
 	cache              *cache.Cache
 	remnawaveClient    *remnawave.Client
 	topupRepository    *database.TrafficTopupRepository
+	cardlinkClient     *cardlink.Client
 	// broadcastSessions and adminSessions are pointers so value-receiver methods share the same map.
 	broadcastSessions *sync.Map
 	adminSessions     *sync.Map
@@ -42,6 +44,7 @@ func NewHandler(
 	cache *cache.Cache,
 	remnawaveClient *remnawave.Client,
 	topupRepository *database.TrafficTopupRepository,
+	cardlinkClient *cardlink.Client,
 ) *Handler {
 	return &Handler{
 		syncService:        syncService,
@@ -55,6 +58,7 @@ func NewHandler(
 		cache:              cache,
 		remnawaveClient:    remnawaveClient,
 		topupRepository:    topupRepository,
+		cardlinkClient:     cardlinkClient,
 		broadcastSessions:  &sync.Map{},
 		adminSessions:      &sync.Map{},
 	}

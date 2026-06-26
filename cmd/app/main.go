@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"remnawave-tg-shop-bot/internal/cache"
+	"remnawave-tg-shop-bot/internal/cardlink"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/cryptopay"
 	"remnawave-tg-shop-bot/internal/database"
@@ -102,10 +103,22 @@ func main() {
 
 	paymentService := payment.NewPaymentService(tm, purchaseRepository, remnawaveClient, customerRepository, b, cryptoPayClient, yookasaClient, referralRepository, cache, moynalogClient, topupRepository)
 
+	var cardlinkClient *cardlink.Client
+	if config.CardlinkTopupEnabled() {
+		cardlinkClient = cardlink.NewClient(config.CardlinkBaseURL(), config.CardlinkAPIToken())
+		slog.Info("Cardlink topup client initialized")
+	}
+
 	cronScheduler := setupInvoiceChecker(purchaseRepository, cryptoPayClient, paymentService, yookasaClient)
 	if cronScheduler != nil {
 		cronScheduler.Start()
 		defer cronScheduler.Stop()
+	}
+
+	if cardlinkClient != nil {
+		cardlinkCron := setupCardlinkTopupChecker(topupRepository, cardlinkClient, remnawaveClient, b)
+		cardlinkCron.Start()
+		defer cardlinkCron.Stop()
 	}
 
 	subService := notification.NewSubscriptionService(customerRepository, purchaseRepository, paymentService, b, tm)
@@ -130,7 +143,7 @@ func main() {
 
 	syncService := sync.NewSyncService(remnawaveClient, customerRepository)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository)
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository, cardlinkClient)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
@@ -566,4 +579,110 @@ func checkCryptoPayInvoice(
 		}
 	}
 
+}
+
+func setupCardlinkTopupChecker(
+	topupRepository *database.TrafficTopupRepository,
+	cardlinkClient *cardlink.Client,
+	remnawaveClient *remnawave.Client,
+	telegramBot *bot.Bot,
+) *cron.Cron {
+	c := cron.New(cron.WithSeconds())
+	_, err := c.AddFunc("*/5 * * * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		checkCardlinkTopups(ctx, topupRepository, cardlinkClient, remnawaveClient, telegramBot)
+	})
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func checkCardlinkTopups(
+	ctx context.Context,
+	topupRepository *database.TrafficTopupRepository,
+	cardlinkClient *cardlink.Client,
+	remnawaveClient *remnawave.Client,
+	telegramBot *bot.Bot,
+) {
+	pendingTopups, err := topupRepository.ClaimPendingCardlink(ctx)
+	if err != nil {
+		slog.Error("cardlink topup: find pending", "error", err)
+		return
+	}
+	if len(pendingTopups) == 0 {
+		return
+	}
+
+	for _, topup := range pendingTopups {
+		if topup.CardlinkBillID == nil {
+			continue
+		}
+
+		bill, err := cardlinkClient.GetBillStatus(ctx, *topup.CardlinkBillID)
+		if err != nil {
+			slog.Error("cardlink topup: get bill status", "bill_id", *topup.CardlinkBillID, "error", err)
+			continue
+		}
+
+		if bill.IsFailed() {
+			if err := topupRepository.MarkFailed(ctx, topup.ID); err != nil {
+				slog.Error("cardlink topup: mark failed", "topup_id", topup.ID, "error", err)
+			}
+			slog.Info("cardlink topup: bill failed", "bill_id", *topup.CardlinkBillID, "topup_id", topup.ID)
+			continue
+		}
+
+		if !bill.IsPaid() {
+			continue
+		}
+
+		rwUsers, err := remnawaveClient.GetUsersByTelegramID(ctx, topup.TelegramID)
+		if err != nil || len(rwUsers) == 0 {
+			slog.Error("cardlink topup: get remnawave user", "telegram_id", topup.TelegramID, "error", err)
+			if err := topupRepository.MarkFailed(ctx, topup.ID); err != nil {
+				slog.Error("cardlink topup: mark failed after rw lookup", "topup_id", topup.ID, "error", err)
+			}
+			sendMessage(ctx, telegramBot, topup.TelegramID, "❌ Ошибка зачисления трафика: аккаунт не найден. Обратитесь в поддержку.")
+			continue
+		}
+		rwUser := rwUsers[0]
+
+		if rwUser.TrafficLimitBytes == 0 {
+			slog.Warn("cardlink topup: user has unlimited traffic", "telegram_id", topup.TelegramID)
+			if err := topupRepository.MarkCompleted(ctx, topup.ID); err != nil {
+				slog.Error("cardlink topup: mark completed (unlimited)", "topup_id", topup.ID, "error", err)
+			}
+			sendMessage(ctx, telegramBot, topup.TelegramID, "ℹ️ У тебя безлимитный тариф — дополнительный трафик не нужен. Обратись в поддержку для возврата.")
+			continue
+		}
+
+		targetBytes := int64(rwUser.TrafficLimitBytes) + int64(topup.GBAmount)*int64(config.BytesInGigabyte())
+		rwUUID := rwUser.UUID
+
+		if err := remnawaveClient.UpdateUserTrafficLimit(ctx, rwUUID, int(targetBytes), rwUser.TrafficLimitStrategy); err != nil {
+			if err := topupRepository.MarkFailed(ctx, topup.ID); err != nil {
+				slog.Error("cardlink topup: mark failed after rw update", "topup_id", topup.ID, "error", err)
+			}
+			slog.Error("cardlink topup: update traffic limit", "telegram_id", topup.TelegramID, "error", err)
+			sendMessage(ctx, telegramBot, config.GetAdminTelegramId(), fmt.Sprintf("Cardlink top-up: Remnawave update failed for telegram_id=%d, pkg=%dGB: %v", topup.TelegramID, topup.GBAmount, err))
+			continue
+		}
+
+		if err := topupRepository.MarkCompleted(ctx, topup.ID); err != nil {
+			slog.Error("cardlink topup: mark completed failed (traffic already credited)", "topup_id", topup.ID, "error", err)
+		}
+		newLimitGB := int(targetBytes) / config.BytesInGigabyte()
+		msg := fmt.Sprintf("✅ Зачислено <b>+%d ГБ</b>.\nТекущий лимит трафика: <b>%d ГБ</b>.", topup.GBAmount, newLimitGB)
+		sendMessage(ctx, telegramBot, topup.TelegramID, msg)
+		slog.Info("cardlink topup: completed", "telegram_id", topup.TelegramID, "gb_amount", topup.GBAmount, "new_limit_gb", newLimitGB)
+	}
+}
+
+func sendMessage(ctx context.Context, b *bot.Bot, chatID int64, text string) {
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML})
+	if err != nil {
+		slog.Error("sendMessage failed", "chat_id", chatID, "error", err)
+	}
 }

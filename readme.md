@@ -7,6 +7,10 @@ This fork adds:
 - `/fix_traffic_strategy` admin command to audit and fix strategies on existing users
 - Startup validation for `TRAFFIC_LIMIT_RESET_STRATEGY` — invalid values prevent bot from starting
 - Traffic top-up purchase flow via Tribute (`TOPUP_*` env variables)
+- Traffic top-up via **Cardlink** card payments (`CARDLINK_TOPUP_*` env variables)
+- Admin broadcast with audience segments (all, expired, inactive, never-subscribed)
+- Interactive admin panel (`/admin` inline keyboard)
+- `STATUS_ENABLED` toggle for the status button independent of `SERVER_STATUS_URL`
 
 See `INVESTIGATION.md` for technical details.
 
@@ -35,6 +39,7 @@ purchase and manage subscriptions through Telegram with multiple payment system 
 - [CryptoPay API](https://help.crypt.bot/crypto-pay-api)
 - Telegram Stars
 - Tribute
+- [Cardlink](https://cardlink.link/en/reference/api) (traffic top-ups)
 
 ## Features
 
@@ -106,6 +111,7 @@ The application requires the following environment variables to be set:
 | `TRAFFIC_LIMIT`          | Maximum allowed traffic in gb (0 to set unlimited)                                                                                         |
 | `TELEGRAM_STARS_ENABLED` | Enable/disable Telegram Stars payment method (true/false)                                                                                  |
 | `REQUIRE_PAID_PURCHASE_FOR_STARS` | Require successful cryptocurrency or card payment before allowing Telegram Stars (true/false). Default: false |
+| `STATUS_ENABLED`         | Show the status button (true/false). Default: false. Independent of `SERVER_STATUS_URL`.                                                   |
 | `SERVER_STATUS_URL`      | URL to server status page (optional) - if not set, button will not be displayed                                                            |
 | `SUPPORT_URL`            | URL to support chat or page (optional) - if not set, button will not be displayed                                                          |
 | `FEEDBACK_URL`           | URL to feedback/reviews page (optional) - if not set, button will not be displayed                                                         |
@@ -138,6 +144,13 @@ The application requires the following environment variables to be set:
 | `TOPUP_PACKAGE_50GB_ID`  | Tribute `subscription_id` for the 50 GB package.                                                                                          |
 | `TOPUP_PACKAGE_50GB_URL` | Tribute payment URL for the 50 GB package.                                                                                                 |
 | `TOPUP_PACKAGE_50GB_PRICE` | Display price for 50 GB package.                                                                                                         |
+| `CARDLINK_TOPUP_ENABLED` | Enable Cardlink card payment for traffic top-ups (true/false). Default: false.                                                             |
+| `CARDLINK_API_TOKEN`     | Cardlink API bearer token from your merchant dashboard.                                                                                    |
+| `CARDLINK_SHOP_ID`       | Cardlink shop identifier from your merchant dashboard.                                                                                     |
+| `CARDLINK_BASE_URL`      | Cardlink API base URL. Default: `https://cardlink.link/api/v1`.                                                                           |
+| `CARDLINK_TOPUP_PRICE_10GB` | Price in RUB for the 10 GB top-up package (Cardlink).                                                                                 |
+| `CARDLINK_TOPUP_PRICE_25GB` | Price in RUB for the 25 GB top-up package (Cardlink).                                                                                 |
+| `CARDLINK_TOPUP_PRICE_50GB` | Price in RUB for the 50 GB top-up package (Cardlink).                                                                                 |
 
 ## User Interface
 

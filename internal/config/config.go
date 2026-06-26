@@ -66,6 +66,10 @@ type config struct {
 	topupPackage25                                            TopupPackageConfig
 	topupPackage50                                            TopupPackageConfig
 	topupPackages                                             map[int]TopupPackageConfig
+	cardlinkTopupEnabled                                      bool
+	cardlinkAPIToken, cardlinkShopID                          string
+	cardlinkBaseURL                                           string
+	cardlinkTopupPrices                                       map[int]int
 }
 
 var conf config
@@ -303,6 +307,36 @@ func TrafficLimitResetStrategy() string {
 
 func TopupEnabled() bool {
 	return conf.topupEnabled
+}
+
+func CardlinkTopupEnabled() bool {
+	return conf.cardlinkTopupEnabled
+}
+
+func CardlinkAPIToken() string {
+	return conf.cardlinkAPIToken
+}
+
+func CardlinkShopID() string {
+	return conf.cardlinkShopID
+}
+
+func CardlinkBaseURL() string {
+	return conf.cardlinkBaseURL
+}
+
+func CardlinkTopupPrice(gb int) int {
+	return conf.cardlinkTopupPrices[gb]
+}
+
+func CardlinkTopupPackages() []int {
+	var gbs []int
+	for _, gb := range []int{10, 25, 50} {
+		if conf.cardlinkTopupPrices[gb] > 0 {
+			gbs = append(gbs, gb)
+		}
+	}
+	return gbs
 }
 
 func StatusEnabled() bool {
@@ -634,6 +668,18 @@ func InitConfig() {
 		conf.moynalogURL = envStringDefault("MOYNALOG_URL", "https://moynalog.ru/api/v1")
 		conf.moynalogUsername = mustEnv("MOYNALOG_USERNAME")
 		conf.moynalogPassword = mustEnv("MOYNALOG_PASSWORD")
+	}
+
+	conf.cardlinkTopupEnabled = envBool("CARDLINK_TOPUP_ENABLED")
+	if conf.cardlinkTopupEnabled {
+		conf.cardlinkAPIToken = mustEnv("CARDLINK_API_TOKEN")
+		conf.cardlinkShopID = mustEnv("CARDLINK_SHOP_ID")
+		conf.cardlinkBaseURL = envStringDefault("CARDLINK_BASE_URL", "https://cardlink.link/api/v1")
+		conf.cardlinkTopupPrices = map[int]int{
+			10: mustEnvInt("CARDLINK_TOPUP_PRICE_10GB"),
+			25: mustEnvInt("CARDLINK_TOPUP_PRICE_25GB"),
+			50: mustEnvInt("CARDLINK_TOPUP_PRICE_50GB"),
+		}
 	}
 
 	conf.topupEnabled = envBool("TOPUP_ENABLED")
