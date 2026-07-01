@@ -201,7 +201,7 @@ func sendUserCard(ctx context.Context, b *bot.Bot, chatID, targetID int64, h Han
 		msg += "\n⚠️ Remnawave: не найден"
 	} else {
 		u := rwUsers[0]
-		limitGB := u.TrafficLimitBytes / config.BytesInGigabyte()
+		limitGB := u.TrafficLimitBytes / int64(config.BytesInGigabyte())
 		msg += fmt.Sprintf("\n🌐 <b>RW status:</b> %s\n📊 <b>Limit:</b> %d GB\n📅 <b>RW expire:</b> %s\n🆔 <code>%s</code>",
 			u.Status, limitGB, u.ExpireAt.Format("02.01.2006 15:04"), u.UUID)
 	}
@@ -416,7 +416,7 @@ func (h Handler) AdminUserResetTrafficCallback(ctx context.Context, b *bot.Bot, 
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Error: %v", err))
 		return
 	}
-	limitGB := rwUsers[0].TrafficLimitBytes / config.BytesInGigabyte()
+	limitGB := rwUsers[0].TrafficLimitBytes / int64(config.BytesInGigabyte())
 	sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Трафик пользователя %d сброшен. Лимит: %d GB", targetID, limitGB))
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: targetID, ParseMode: models.ParseModeHTML,
@@ -433,14 +433,14 @@ func (h Handler) execTopup(ctx context.Context, b *bot.Bot, chatID, targetID int
 	}
 	u := rwUsers[0]
 	delta := int64(gb) * int64(config.BytesInGigabyte())
-	newLimit := int64(u.TrafficLimitBytes) + delta
+	newLimit := u.TrafficLimitBytes + delta
 	if newLimit < 0 {
 		sendAdminReply(ctx, b, chatID,
 			fmt.Sprintf("❌ Нельзя: текущий лимит %d GB, вычитаете %d GB — результат отрицательный.",
-				u.TrafficLimitBytes/config.BytesInGigabyte(), -gb))
+				u.TrafficLimitBytes/int64(config.BytesInGigabyte()), -gb))
 		return
 	}
-	if err := h.remnawaveClient.UpdateUserTrafficLimit(ctx, u.UUID, int(newLimit), config.TrafficLimitResetStrategy()); err != nil {
+	if err := h.remnawaveClient.UpdateUserTrafficLimit(ctx, u.UUID, newLimit, config.TrafficLimitResetStrategy()); err != nil {
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Failed: %v", err))
 		return
 	}

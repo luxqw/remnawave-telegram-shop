@@ -8,15 +8,16 @@ import (
 
 // UserTraffic contains traffic usage statistics for a user.
 type UserTraffic struct {
-	UsedTrafficBytes         int        `json:"usedTrafficBytes"`
-	LifetimeUsedTrafficBytes int        `json:"lifetimeUsedTrafficBytes"`
+	UsedTrafficBytes         int64      `json:"usedTrafficBytes"`
+	LifetimeUsedTrafficBytes int64      `json:"lifetimeUsedTrafficBytes"`
 	OnlineAt                 *time.Time `json:"onlineAt"`
 }
 
 // HwidDevice represents a hardware device registered for a user.
 type HwidDevice struct {
 	Hwid        string     `json:"hwid"`
-	UserUuid    string     `json:"userUuid"`
+	UserId      int64      `json:"userId"`
+	RequestIp   *string    `json:"requestIp"`
 	Platform    *string    `json:"platform"`
 	OsVersion   *string    `json:"osVersion"`
 	DeviceModel *string    `json:"deviceModel"`
@@ -40,7 +41,7 @@ type User struct {
 	ExpireAt             time.Time    `json:"expireAt"`
 	TelegramID           *int64       `json:"telegramId"`
 	Status               string       `json:"status"`
-	TrafficLimitBytes    int          `json:"trafficLimitBytes"`
+	TrafficLimitBytes    int64        `json:"trafficLimitBytes"`
 	TrafficLimitStrategy string       `json:"trafficLimitStrategy"`
 	HwidDeviceLimit      *int         `json:"hwidDeviceLimit"`
 	UserTraffic          *UserTraffic `json:"userTraffic"`
@@ -82,7 +83,7 @@ type CreateUserRequest struct {
 	Username             string      `json:"username"`
 	ExpireAt             time.Time   `json:"expireAt"`
 	Status               string      `json:"status,omitempty"`
-	TrafficLimitBytes    *int        `json:"trafficLimitBytes,omitempty"`
+	TrafficLimitBytes    *int64      `json:"trafficLimitBytes,omitempty"`
 	TrafficLimitStrategy string      `json:"trafficLimitStrategy,omitempty"`
 	ActiveInternalSquads []uuid.UUID `json:"activeInternalSquads,omitempty"`
 	ExternalSquadUuid    *uuid.UUID  `json:"externalSquadUuid,omitempty"`
@@ -96,7 +97,7 @@ type UpdateUserRequest struct {
 	UUID                 *uuid.UUID  `json:"uuid,omitempty"`
 	Status               string      `json:"status,omitempty"`
 	ExpireAt             *time.Time  `json:"expireAt,omitempty"`
-	TrafficLimitBytes    *int        `json:"trafficLimitBytes,omitempty"`
+	TrafficLimitBytes    *int64      `json:"trafficLimitBytes,omitempty"`
 	TrafficLimitStrategy string      `json:"trafficLimitStrategy,omitempty"`
 	ActiveInternalSquads []uuid.UUID `json:"activeInternalSquads,omitempty"`
 	ExternalSquadUuid    *uuid.UUID  `json:"externalSquadUuid,omitempty"`

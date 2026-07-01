@@ -227,7 +227,7 @@ func (r *Client) GetUsersByTelegramID(ctx context.Context, telegramID int64) ([]
 // UpdateUserTrafficLimit — PATCH trafficLimitBytes + strategy, keeps all other fields
 // ---------------------------------------------------------------------------
 
-func (r *Client) UpdateUserTrafficLimit(ctx context.Context, userUUID uuid.UUID, newLimitBytes int, strategy string) error {
+func (r *Client) UpdateUserTrafficLimit(ctx context.Context, userUUID uuid.UUID, newLimitBytes int64, strategy string) error {
 	req := &UpdateUserRequest{
 		UUID:                 &userUUID,
 		Status:               "ACTIVE",
@@ -255,7 +255,7 @@ func (r *Client) UpdateUserStrategy(ctx context.Context, userUUID uuid.UUID, str
 // DecreaseSubscription
 // ---------------------------------------------------------------------------
 
-func (r *Client) DecreaseSubscription(ctx context.Context, telegramId int64, trafficLimit int, days int) (*time.Time, error) {
+func (r *Client) DecreaseSubscription(ctx context.Context, telegramId int64, trafficLimit int64, days int) (*time.Time, error) {
 	users, err := r.getUsersByTelegramID(ctx, telegramId)
 	if err != nil {
 		return nil, err
@@ -278,7 +278,7 @@ func (r *Client) DecreaseSubscription(ctx context.Context, telegramId int64, tra
 // CreateOrUpdateUser
 // ---------------------------------------------------------------------------
 
-func (r *Client) CreateOrUpdateUser(ctx context.Context, customerId int64, telegramId int64, trafficLimit int, days int, isTrialUser bool) (*User, error) {
+func (r *Client) CreateOrUpdateUser(ctx context.Context, customerId int64, telegramId int64, trafficLimit int64, days int, isTrialUser bool) (*User, error) {
 	users, err := r.getUsersByTelegramID(ctx, telegramId)
 	if err != nil {
 		return nil, err
@@ -312,7 +312,7 @@ func usernameFromCtx(ctx context.Context) string {
 	return ""
 }
 
-func (r *Client) updateUser(ctx context.Context, existingUser *User, trafficLimit int, days int) (*User, error) {
+func (r *Client) updateUser(ctx context.Context, existingUser *User, trafficLimit int64, days int) (*User, error) {
 	newExpire := getNewExpire(days, existingUser.ExpireAt)
 
 	squads, err := r.getInternalSquads(ctx)
@@ -360,7 +360,7 @@ func (r *Client) updateUser(ctx context.Context, existingUser *User, trafficLimi
 	return &resp.Response, nil
 }
 
-func (r *Client) createUser(ctx context.Context, customerId int64, telegramId int64, trafficLimit int, days int, isTrialUser bool) (*User, error) {
+func (r *Client) createUser(ctx context.Context, customerId int64, telegramId int64, trafficLimit int64, days int, isTrialUser bool) (*User, error) {
 	expireAt := time.Now().UTC().AddDate(0, 0, days)
 	username := generateUsername(customerId, telegramId)
 

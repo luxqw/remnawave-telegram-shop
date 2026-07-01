@@ -11,7 +11,6 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	"math"
 	"net/http"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
@@ -231,7 +230,7 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 		return fmt.Errorf("topup: user %d not eligible: %s", telegramID, rwUser.Status)
 	}
 
-	targetBytes := int64(rwUser.TrafficLimitBytes) + int64(gbAmount)*int64(config.BytesInGigabyte())
+	targetBytes := rwUser.TrafficLimitBytes + int64(gbAmount)*int64(config.BytesInGigabyte())
 	remnaUUID := rwUser.UUID.String()
 
 	var topupID int64
@@ -269,10 +268,7 @@ func (c *Client) applyTopup(ctx context.Context, topupID int64, remnaUUID string
 	if err != nil {
 		return fmt.Errorf("topup: parse uuid %q: %w", remnaUUID, err)
 	}
-	if targetBytes > math.MaxInt {
-		return fmt.Errorf("topup: target %d overflows int", targetBytes)
-	}
-	if err := c.remnawaveClient.UpdateUserTrafficLimit(ctx, rwUUID, int(targetBytes), strategy); err != nil {
+	if err := c.remnawaveClient.UpdateUserTrafficLimit(ctx, rwUUID, targetBytes, strategy); err != nil {
 		_ = c.topupRepository.MarkFailed(ctx, topupID)
 		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: Remnawave UpdateUser failed for telegram_id=%d, pkg=%dGB: %v", telegramID, gbAmount, err))
 		return fmt.Errorf("topup: remnawave update: %w", err)

@@ -26,7 +26,7 @@ func (h Handler) StatusCallbackHandler(ctx context.Context, b *bot.Bot, update *
 
 	var resetStrategy string
 	var lastResetAt *time.Time
-	var usedBytes, limitBytes int
+	var usedBytes, limitBytes int64
 
 	rwCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -51,7 +51,7 @@ func (h Handler) StatusCallbackHandler(ctx context.Context, b *bot.Bot, update *
 	}
 }
 
-func buildStatusText(customer *database.Customer, langCode string, resetStrategy string, lastResetAt *time.Time, usedBytes, limitBytes int) string {
+func buildStatusText(customer *database.Customer, langCode string, resetStrategy string, lastResetAt *time.Time, usedBytes, limitBytes int64) string {
 	tm := translation.GetInstance()
 	var sb strings.Builder
 

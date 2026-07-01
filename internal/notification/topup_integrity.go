@@ -74,11 +74,11 @@ func (s *TopupIntegrityService) CheckAndReapply(ctx context.Context) error {
 			continue
 		}
 
-		if int64(user.TrafficLimitBytes) >= *topup.TargetTrafficLimitBytes {
+		if user.TrafficLimitBytes >= *topup.TargetTrafficLimitBytes {
 			continue
 		}
 
-		target := int(*topup.TargetTrafficLimitBytes)
+		target := *topup.TargetTrafficLimitBytes
 		applyCtx, applyCancel := context.WithTimeout(ctx, 10*time.Second)
 		applyErr := s.remnawaveClient.UpdateUserTrafficLimit(applyCtx, user.UUID, target, user.TrafficLimitStrategy)
 		applyCancel()

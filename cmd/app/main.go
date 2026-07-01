@@ -658,10 +658,10 @@ func checkCardlinkTopups(
 			continue
 		}
 
-		targetBytes := int64(rwUser.TrafficLimitBytes) + int64(topup.GBAmount)*int64(config.BytesInGigabyte())
+		targetBytes := rwUser.TrafficLimitBytes + int64(topup.GBAmount)*int64(config.BytesInGigabyte())
 		rwUUID := rwUser.UUID
 
-		if err := remnawaveClient.UpdateUserTrafficLimit(ctx, rwUUID, int(targetBytes), rwUser.TrafficLimitStrategy); err != nil {
+		if err := remnawaveClient.UpdateUserTrafficLimit(ctx, rwUUID, targetBytes, rwUser.TrafficLimitStrategy); err != nil {
 			if err := topupRepository.MarkFailed(ctx, topup.ID); err != nil {
 				slog.Error("cardlink topup: mark failed after rw update", "topup_id", topup.ID, "error", err)
 			}

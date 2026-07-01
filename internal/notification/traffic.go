@@ -72,8 +72,8 @@ func (s *TrafficWarningService) CheckAndNotify() error {
 			continue
 		}
 
-		remainingGB := (u.TrafficLimitBytes - u.UserTraffic.UsedTrafficBytes) / config.BytesInGigabyte()
-		totalGB := u.TrafficLimitBytes / config.BytesInGigabyte()
+		remainingGB := (u.TrafficLimitBytes - u.UserTraffic.UsedTrafficBytes) / int64(config.BytesInGigabyte())
+		totalGB := u.TrafficLimitBytes / int64(config.BytesInGigabyte())
 		text := fmt.Sprintf(s.tm.GetText(customer.Language, "traffic_warning"), remainingGB, totalGB)
 
 		var rows [][]models.InlineKeyboardButton
