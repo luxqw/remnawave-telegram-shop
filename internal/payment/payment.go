@@ -503,7 +503,7 @@ func (s PaymentService) createTributeInvoice(ctx context.Context, amount float64
 // calculateRollover returns how many bytes of an existing admin topup remain unused
 // and should be carried into the next subscription period.
 //
-// Formula: rollover = topup_bytes - max(0, used_bytes - base_bytes)
+// Formula: rollover = max(0, topup_bytes - used_bytes)
 // where topup_bytes = target_limit - base_limit.
 func (s PaymentService) calculateRollover(ctx context.Context, telegramID int64) int64 {
 	if s.topupRepository == nil {
@@ -535,12 +535,7 @@ func (s PaymentService) calculateRollover(ctx context.Context, telegramID int64)
 		return topupBytes
 	}
 
-	usedBeyondBase := int64(u.UserTraffic.UsedTrafficBytes) - baseBytes
-	if usedBeyondBase <= 0 {
-		return topupBytes
-	}
-
-	rollover := topupBytes - usedBeyondBase
+	rollover := topupBytes - int64(u.UserTraffic.UsedTrafficBytes)
 	if rollover <= 0 {
 		return 0
 	}

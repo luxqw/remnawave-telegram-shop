@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.23] - 2026-07-01
+
+### Fixed
+- **Traffic rollover calculation bug** — when a subscription renews, the rollover now correctly deducts *total* traffic used from the remaining topup quota. Previously, only traffic consumed beyond the base limit was deducted, so users who hadn't exceeded the base quota received their full topup unchanged. Example: base=50 GB, topup=51.12 GB, used=24.11 GB → rollover was 51.12 GB (wrong), now correctly 27.01 GB, giving a new limit of 77.01 GB instead of 101.12 GB.
+
+## [Unreleased] - fork v1.0.21
+
+### Added
+- **Cardlink payment integration** for traffic top-ups (`CARDLINK_TOPUP_ENABLED`, `CARDLINK_API_TOKEN`, `CARDLINK_SHOP_ID`, `CARDLINK_BASE_URL`, `CARDLINK_TOPUP_PRICE_10GB/25GB/50GB`) — card payment alternative to Tribute for top-up packages
+- **Admin broadcast audience segments**: all users, expired subscribers, inactive (expired + never subscribed), never-subscribed segment
+- **Background broadcast delivery** with per-segment failure breakdown reporting
+- **Interactive admin panel** (`/admin` inline keyboard) for common admin operations
+- `STATUS_ENABLED` env var to toggle the status button independently of `SERVER_STATUS_URL`
+
+### Changed
+- Broadcast and admin panel sessions are mutually exclusive to prevent state conflicts
+- Admin panel surfaces DB errors on subscription extend operations
+
 ## [3.4.1] - 2025-11-08
 
 ### Added
