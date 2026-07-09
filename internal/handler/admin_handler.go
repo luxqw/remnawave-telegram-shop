@@ -81,52 +81,18 @@ func (h Handler) AdminTopupCommandHandler(ctx context.Context, b *bot.Bot, updat
 		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid gb amount (must be non-zero)")
 		return
 	}
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
+	chatID := update.Message.Chat.ID
+	newLimitGB, ok := h.previewTopupNewLimitGB(ctx, b, chatID, targetID, gb)
+	if !ok {
 		return
 	}
-	u := rwUsers[0]
-
-	// Keep arithmetic in int64 to avoid overflow on large GB values.
-	delta := int64(gb) * int64(config.BytesInGigabyte())
-	newLimit := int64(u.TrafficLimitBytes) + delta
-	if newLimit < 0 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID,
-			fmt.Sprintf("❌ Нельзя: текущий лимит %d GB, вычитаете %d GB — результат отрицательный.",
-				u.TrafficLimitBytes/config.BytesInGigabyte(), -gb))
-		return
-	}
-
-	if err := h.remnawaveClient.UpdateUserTrafficLimit(ctx, u.UUID, int(newLimit), config.TrafficLimitResetStrategy()); err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Failed: %v", err))
-		return
-	}
-
-	// TargetTrafficLimitBytes must always be the absolute post-topup limit (not a delta)
-	// so that calculateRollover and the integrity checker can compute correctly.
-	now := time.Now()
-	target := newLimit
-	reply := ""
-	if _, dbErr := h.topupRepository.Create(ctx, &database.TrafficTopup{
-		TelegramID:              targetID,
-		RemnawaveUUID:           u.UUID.String(),
-		GBAmount:                gb,
-		Status:                  database.TopupStatusCompleted,
-		TargetTrafficLimitBytes: &target,
-		CompletedAt:             &now,
-	}); dbErr != nil {
-		slog.Error("admin topup: create DB record", "telegram_id", targetID, "error", dbErr)
-		reply = "\n⚠️ DB-запись не создана — integrity check не восстановит лимит после сброса."
-	}
-
 	sign := "+"
 	if gb < 0 {
 		sign = ""
 	}
-	sendAdminReply(ctx, b, update.Message.Chat.ID,
-		fmt.Sprintf("✅ %s%d GB для %d\nНовый лимит: %d GB%s", sign, gb, targetID, newLimit/int64(config.BytesInGigabyte()), reply))
-	slog.Info("admin topup: applied", "telegram_id", targetID, "gb", gb, "new_limit_gb", newLimit/int64(config.BytesInGigabyte()))
+	h.requestAdminConfirmation(ctx, b, chatID, targetID, "topup", gb, "command",
+		fmt.Sprintf("⚠️ Подтвердите: %s%d GB для пользователя <code>%d</code>?\nНовый лимит: %d GB",
+			sign, gb, targetID, newLimitGB/int64(config.BytesInGigabyte())))
 }
 
 func (h Handler) AdminTopupEnrollCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -208,16 +174,9 @@ func (h Handler) AdminResetDevicesCommandHandler(ctx context.Context, b *bot.Bot
 		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
 		return
 	}
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
-		return
-	}
-	if err := h.remnawaveClient.DeleteAllUserHwidDevices(ctx, rwUsers[0].UUID); err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Failed: %v", err))
-		return
-	}
-	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("✅ Все устройства пользователя %d отключены (HWID очищен)", targetID))
+	chatID := update.Message.Chat.ID
+	h.requestAdminConfirmation(ctx, b, chatID, targetID, "reset_devices", 0, "command",
+		fmt.Sprintf("⚠️ Подтвердите: СБРОСИТЬ устройства пользователя <code>%d</code>?", targetID))
 }
 
 // broadcastWaitingForText is the sentinel stored in broadcastSessions when the admin has
@@ -490,16 +449,16 @@ func (h Handler) AdminExtendCommandHandler(ctx context.Context, b *bot.Bot, upda
 }
 
 func (h Handler) AdminDisableCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	h.setRemnawaveStatus(ctx, b, update, "DISABLED",
-		"<b>Доступ приостановлен.</b>\n\nВаш VPN временно отключён. Если это ошибка — обратитесь в поддержку.")
+	h.requestSetRemnawaveStatus(ctx, b, update, "DISABLED")
 }
 
 func (h Handler) AdminEnableCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	h.setRemnawaveStatus(ctx, b, update, "ACTIVE",
-		"<b>Доступ восстановлен!</b>\n\nВаш VPN снова активен. Приятного пользования!")
+	h.requestSetRemnawaveStatus(ctx, b, update, "ACTIVE")
 }
 
-func (h Handler) setRemnawaveStatus(ctx context.Context, b *bot.Bot, update *models.Update, status, userMsg string) {
+// requestSetRemnawaveStatus parses the target and shows a confirmation prompt; the actual status
+// change happens in execSetStatus once the admin confirms.
+func (h Handler) requestSetRemnawaveStatus(ctx context.Context, b *bot.Bot, update *models.Update, status string) {
 	parts := strings.Fields(update.Message.Text)
 	if len(parts) < 2 {
 		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_disable or /admin_enable &lt;telegram_id&gt;")
@@ -510,18 +469,13 @@ func (h Handler) setRemnawaveStatus(ctx context.Context, b *bot.Bot, update *mod
 		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
 		return
 	}
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
-		return
+	chatID := update.Message.Chat.ID
+	action, verb := "disable", "ОТКЛЮЧИТЬ"
+	if status == "ACTIVE" {
+		action, verb = "enable", "ВКЛЮЧИТЬ"
 	}
-	if err := h.remnawaveClient.SetUserStatus(ctx, rwUsers[0].UUID, status); err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Error: %v", err))
-		return
-	}
-	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("User %d -> %s", targetID, status))
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: targetID, ParseMode: models.ParseModeHTML, Text: userMsg})
-	slog.Info("admin set status", "telegram_id", targetID, "status", status)
+	h.requestAdminConfirmation(ctx, b, chatID, targetID, action, 0, "command",
+		fmt.Sprintf("⚠️ Подтвердите: %s пользователя <code>%d</code>?", verb, targetID))
 }
 
 func (h Handler) AdminResetTrafficCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -535,22 +489,9 @@ func (h Handler) AdminResetTrafficCommandHandler(ctx context.Context, b *bot.Bot
 		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
 		return
 	}
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
-		return
-	}
-	if err := h.remnawaveClient.ResetUserTraffic(ctx, rwUsers[0].UUID); err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Error: %v", err))
-		return
-	}
-	limitGB := rwUsers[0].TrafficLimitBytes / config.BytesInGigabyte()
-	sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Traffic reset for %d. Limit: %d GB", targetID, limitGB))
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: targetID, ParseMode: models.ParseModeHTML,
-		Text: "<b>Трафик сброшен!</b>\n\nВаш счётчик трафика сброшен администратором. Снова доступен полный объём.",
-	})
-	slog.Info("admin reset traffic", "telegram_id", targetID)
+	chatID := update.Message.Chat.ID
+	h.requestAdminConfirmation(ctx, b, chatID, targetID, "reset_traffic", 0, "command",
+		fmt.Sprintf("⚠️ Подтвердите: СБРОСИТЬ трафик пользователя <code>%d</code>?", targetID))
 }
 
 func (h Handler) AdminStatsCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -638,6 +579,47 @@ func (h Handler) AdminSetTrialCommandHandler(ctx context.Context, b *bot.Bot, up
 		fmt.Sprintf("✅ Пользователь %d → <b>%s</b>\n\nТеперь:\n• Докупить трафик: %v\n• Мои устройства: видит", targetID, status, !isTrial))
 	slog.Info("admin set_trial", "telegram_id", targetID, "is_trial", isTrial)
 }
+
+// AdminAuditCommandHandler handles /admin_audit <telegram_id> — shows the last 20 audit-logged
+// actions taken against that user (enable/disable, traffic/device resets, topups).
+func (h Handler) AdminAuditCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	parts := strings.Fields(update.Message.Text)
+	if len(parts) < 2 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Usage: /admin_audit &lt;telegram_id&gt;")
+		return
+	}
+	targetID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid telegram_id")
+		return
+	}
+	entries, err := h.auditLogRepository.FindRecentByTarget(ctx, targetID, 20)
+	if err != nil {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("DB error: %v", err))
+		return
+	}
+	if len(entries) == 0 {
+		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("📜 Нет записей аудита для %d", targetID))
+		return
+	}
+	msg := fmt.Sprintf("📜 <b>Аудит для %d</b> (последние %d):\n\n", targetID, len(entries))
+	for _, e := range entries {
+		outcomeIcon := "✅"
+		if e.Outcome != "success" {
+			outcomeIcon = "❌"
+		}
+		line := fmt.Sprintf("%s %s — <b>%s</b> (%s)", e.CreatedAt.Format("02.01.2006 15:04"), outcomeIcon, e.Action, e.Source)
+		if e.ParamInt != nil {
+			line += fmt.Sprintf(" [%d]", *e.ParamInt)
+		}
+		if e.ErrorMessage != nil {
+			line += fmt.Sprintf(" — %s", *e.ErrorMessage)
+		}
+		msg += line + "\n"
+	}
+	sendAdminReply(ctx, b, update.Message.Chat.ID, msg)
+}
+
 func sendAdminReply(ctx context.Context, b *bot.Bot, chatID int64, text string) {
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML})
 	if err != nil {

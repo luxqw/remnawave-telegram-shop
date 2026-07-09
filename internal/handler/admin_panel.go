@@ -19,11 +19,18 @@ const (
 	adminStepWaitUserID = "uid"
 	adminStepWaitGB     = "gb"
 	adminStepWaitDays   = "days"
+	adminStepConfirm    = "confirm"
 )
 
+const adminConfirmExpiry = 5 * time.Minute
+
 type adminSession struct {
-	Step     string
-	TargetID int64
+	Step        string
+	TargetID    int64
+	Action      string
+	Param       int
+	RequestedAt time.Time
+	Source      string
 }
 
 func (h Handler) isAdminSessionActive(chatID int64) bool {
@@ -42,6 +49,96 @@ func (h Handler) getAdminSession(chatID int64) (adminSession, bool) {
 
 func (h Handler) setAdminSession(chatID int64, s adminSession) {
 	h.adminSessions.Store(chatID, s)
+}
+
+// requestAdminConfirmation stores a pending destructive/money-adjusting action in the admin
+// session and shows a Да/Отменить prompt. The action only actually runs once the admin taps
+// "Да" (AdminActionConfirmCallback), which dispatches to the matching exec* helper.
+func (h Handler) requestAdminConfirmation(ctx context.Context, b *bot.Bot, chatID, targetID int64, action string, param int, source, confirmText string) {
+	h.setAdminSession(chatID, adminSession{
+		Step:        adminStepConfirm,
+		TargetID:    targetID,
+		Action:      action,
+		Param:       param,
+		RequestedAt: time.Now(),
+		Source:      source,
+	})
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      confirmText,
+		ParseMode: models.ParseModeHTML,
+		ReplyMarkup: models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: "✅ Да, подтвердить", CallbackData: CallbackAdminActionConfirm},
+					{Text: "❌ Отменить", CallbackData: CallbackAdminActionCancel},
+				},
+			},
+		},
+	})
+	if err != nil {
+		slog.Error("admin: send confirmation prompt", "error", err)
+	}
+}
+
+// AdminActionConfirmCallback executes the pending confirmed action stored in the admin session,
+// then records the outcome in the audit log. Clears the session before executing so a double tap
+// on "Да" can't double-execute.
+func (h Handler) AdminActionConfirmCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.CallbackQuery == nil || update.CallbackQuery.From.ID != config.GetAdminTelegramId() {
+		return
+	}
+	chatID := update.CallbackQuery.From.ID
+	sess, ok := h.getAdminSession(chatID)
+	if !ok || sess.Step != adminStepConfirm {
+		return
+	}
+	h.adminSessions.Delete(chatID)
+	if time.Since(sess.RequestedAt) > adminConfirmExpiry {
+		sendAdminReply(ctx, b, chatID, "❌ Время подтверждения истекло, повторите действие.")
+		return
+	}
+
+	switch sess.Action {
+	case "enable":
+		h.execSetStatus(ctx, b, chatID, sess.TargetID, "ACTIVE", sess.Source)
+	case "disable":
+		h.execSetStatus(ctx, b, chatID, sess.TargetID, "DISABLED", sess.Source)
+	case "reset_traffic":
+		h.execResetTraffic(ctx, b, chatID, sess.TargetID, sess.Source)
+	case "reset_devices":
+		h.execResetDevices(ctx, b, chatID, sess.TargetID, sess.Source)
+	case "topup":
+		h.execTopup(ctx, b, chatID, sess.TargetID, sess.Param, sess.Source)
+	default:
+		slog.Error("admin: unknown confirm action", "action", sess.Action)
+	}
+}
+
+// AdminActionCancelCallback discards a pending confirmation without executing it.
+func (h Handler) AdminActionCancelCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.CallbackQuery == nil || update.CallbackQuery.From.ID != config.GetAdminTelegramId() {
+		return
+	}
+	chatID := update.CallbackQuery.From.ID
+	h.adminSessions.Delete(chatID)
+	sendAdminReply(ctx, b, chatID, "❌ Отменено.")
+}
+
+// logAdminAction writes one audit row for a confirmed admin action. Logged best-effort — a
+// failure to write the audit row must not block or roll back the action itself.
+func (h Handler) logAdminAction(ctx context.Context, action string, targetID int64, param *int, outcome string, errMsg *string, source string) {
+	if _, err := h.auditLogRepository.Create(ctx, &database.AdminAuditLog{
+		AdminTelegramID:  config.GetAdminTelegramId(),
+		Action:           action,
+		TargetTelegramID: targetID,
+		ParamInt:         param,
+		Outcome:          outcome,
+		ErrorMessage:     errMsg,
+		Source:           source,
+	}); err != nil {
+		slog.Error("admin: write audit log", "action", action, "target", targetID, "error", err)
+	}
 }
 
 func sendAdminPanel(ctx context.Context, b *bot.Bot, chatID int64) {
@@ -273,7 +370,17 @@ func (h Handler) AdminPanelTextHandler(ctx context.Context, b *bot.Bot, update *
 			return
 		}
 		h.adminSessions.Delete(chatID)
-		h.execTopup(ctx, b, chatID, sess.TargetID, gb)
+		newLimitGB, ok := h.previewTopupNewLimitGB(ctx, b, chatID, sess.TargetID, gb)
+		if !ok {
+			return
+		}
+		sign := "+"
+		if gb < 0 {
+			sign = ""
+		}
+		h.requestAdminConfirmation(ctx, b, chatID, sess.TargetID, "topup", gb, "panel",
+			fmt.Sprintf("⚠️ Подтвердите: %s%d GB для пользователя <code>%d</code>?\nНовый лимит: %d GB",
+				sign, gb, sess.TargetID, newLimitGB/int64(config.BytesInGigabyte())))
 
 	case adminStepWaitDays:
 		days, err := strconv.Atoi(text)
@@ -333,21 +440,8 @@ func (h Handler) AdminUserEnableCallback(ctx context.Context, b *bot.Bot, update
 	if !ok {
 		return
 	}
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave user not found for %d", targetID))
-		return
-	}
-	if err := h.remnawaveClient.SetUserStatus(ctx, rwUsers[0].UUID, "ACTIVE"); err != nil {
-		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Error: %v", err))
-		return
-	}
-	sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Пользователь %d включён (ACTIVE)", targetID))
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: targetID, ParseMode: models.ParseModeHTML,
-		Text: "<b>Доступ восстановлен!</b>\n\nВаш VPN снова активен. Приятного пользования!",
-	})
-	slog.Info("admin panel: set user ACTIVE", "telegram_id", targetID)
+	h.requestAdminConfirmation(ctx, b, chatID, targetID, "enable", 0, "panel",
+		fmt.Sprintf("⚠️ Подтвердите: ВКЛЮЧИТЬ пользователя <code>%d</code>?", targetID))
 }
 
 func (h Handler) AdminUserDisableCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -359,21 +453,8 @@ func (h Handler) AdminUserDisableCallback(ctx context.Context, b *bot.Bot, updat
 	if !ok {
 		return
 	}
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave user not found for %d", targetID))
-		return
-	}
-	if err := h.remnawaveClient.SetUserStatus(ctx, rwUsers[0].UUID, "DISABLED"); err != nil {
-		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Error: %v", err))
-		return
-	}
-	sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Пользователь %d отключён (DISABLED)", targetID))
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: targetID, ParseMode: models.ParseModeHTML,
-		Text: "<b>Доступ приостановлен.</b>\n\nВаш VPN временно отключён. Если это ошибка — обратитесь в поддержку.",
-	})
-	slog.Info("admin panel: set user DISABLED", "telegram_id", targetID)
+	h.requestAdminConfirmation(ctx, b, chatID, targetID, "disable", 0, "panel",
+		fmt.Sprintf("⚠️ Подтвердите: ОТКЛЮЧИТЬ пользователя <code>%d</code>?", targetID))
 }
 
 func (h Handler) AdminUserResetDevicesCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -385,17 +466,8 @@ func (h Handler) AdminUserResetDevicesCallback(ctx context.Context, b *bot.Bot, 
 	if !ok {
 		return
 	}
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave user not found for %d", targetID))
-		return
-	}
-	if err := h.remnawaveClient.DeleteAllUserHwidDevices(ctx, rwUsers[0].UUID); err != nil {
-		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Error: %v", err))
-		return
-	}
-	sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Устройства пользователя %d сброшены (HWID очищен)", targetID))
-	slog.Info("admin panel: reset devices", "telegram_id", targetID)
+	h.requestAdminConfirmation(ctx, b, chatID, targetID, "reset_devices", 0, "panel",
+		fmt.Sprintf("⚠️ Подтвердите: СБРОСИТЬ устройства пользователя <code>%d</code>?", targetID))
 }
 
 func (h Handler) AdminUserResetTrafficCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -407,13 +479,73 @@ func (h Handler) AdminUserResetTrafficCallback(ctx context.Context, b *bot.Bot, 
 	if !ok {
 		return
 	}
+	h.requestAdminConfirmation(ctx, b, chatID, targetID, "reset_traffic", 0, "panel",
+		fmt.Sprintf("⚠️ Подтвердите: СБРОСИТЬ трафик пользователя <code>%d</code>?", targetID))
+}
+
+// execSetStatus applies an ACTIVE/DISABLED status change in Remnawave, notifies the customer,
+// and records the outcome in the audit log. Called only after admin confirmation.
+func (h Handler) execSetStatus(ctx context.Context, b *bot.Bot, chatID, targetID int64, status, source string) {
 	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
 	if err != nil || len(rwUsers) == 0 {
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave user not found for %d", targetID))
+		h.logAdminAction(ctx, "set_status_"+status, targetID, nil, "failure", strPtr("remnawave user not found"), source)
+		return
+	}
+	if err := h.remnawaveClient.SetUserStatus(ctx, rwUsers[0].UUID, status); err != nil {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Error: %v", err))
+		h.logAdminAction(ctx, "set_status_"+status, targetID, nil, "failure", strPtr(err.Error()), source)
+		return
+	}
+
+	if status == "ACTIVE" {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Пользователь %d включён (ACTIVE)", targetID))
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: targetID, ParseMode: models.ParseModeHTML,
+			Text: "<b>Доступ восстановлен!</b>\n\nВаш VPN снова активен. Приятного пользования!",
+		})
+	} else {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Пользователь %d отключён (DISABLED)", targetID))
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: targetID, ParseMode: models.ParseModeHTML,
+			Text: "<b>Доступ приостановлен.</b>\n\nВаш VPN временно отключён. Если это ошибка — обратитесь в поддержку.",
+		})
+	}
+	slog.Info("admin: set user status", "telegram_id", targetID, "status", status, "source", source)
+	h.logAdminAction(ctx, "set_status_"+status, targetID, nil, "success", nil, source)
+}
+
+// execResetDevices clears all HWID devices for a user and records the outcome in the audit log.
+// Called only after admin confirmation.
+func (h Handler) execResetDevices(ctx context.Context, b *bot.Bot, chatID, targetID int64, source string) {
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
+	if err != nil || len(rwUsers) == 0 {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave user not found for %d", targetID))
+		h.logAdminAction(ctx, "reset_devices", targetID, nil, "failure", strPtr("remnawave user not found"), source)
+		return
+	}
+	if err := h.remnawaveClient.DeleteAllUserHwidDevices(ctx, rwUsers[0].UUID); err != nil {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Error: %v", err))
+		h.logAdminAction(ctx, "reset_devices", targetID, nil, "failure", strPtr(err.Error()), source)
+		return
+	}
+	sendAdminReply(ctx, b, chatID, fmt.Sprintf("✅ Устройства пользователя %d сброшены (HWID очищен)", targetID))
+	slog.Info("admin: reset devices", "telegram_id", targetID, "source", source)
+	h.logAdminAction(ctx, "reset_devices", targetID, nil, "success", nil, source)
+}
+
+// execResetTraffic resets the traffic counter for a user and records the outcome in the audit
+// log. Called only after admin confirmation.
+func (h Handler) execResetTraffic(ctx context.Context, b *bot.Bot, chatID, targetID int64, source string) {
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
+	if err != nil || len(rwUsers) == 0 {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave user not found for %d", targetID))
+		h.logAdminAction(ctx, "reset_traffic", targetID, nil, "failure", strPtr("remnawave user not found"), source)
 		return
 	}
 	if err := h.remnawaveClient.ResetUserTraffic(ctx, rwUsers[0].UUID); err != nil {
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Error: %v", err))
+		h.logAdminAction(ctx, "reset_traffic", targetID, nil, "failure", strPtr(err.Error()), source)
 		return
 	}
 	limitGB := rwUsers[0].TrafficLimitBytes / config.BytesInGigabyte()
@@ -422,26 +554,54 @@ func (h Handler) AdminUserResetTrafficCallback(ctx context.Context, b *bot.Bot, 
 		ChatID: targetID, ParseMode: models.ParseModeHTML,
 		Text: "<b>Трафик сброшен!</b>\n\nВаш счётчик трафика сброшен администратором. Снова доступен полный объём.",
 	})
-	slog.Info("admin panel: reset traffic", "telegram_id", targetID)
+	slog.Info("admin: reset traffic", "telegram_id", targetID, "source", source)
+	h.logAdminAction(ctx, "reset_traffic", targetID, nil, "success", nil, source)
 }
 
-func (h Handler) execTopup(ctx context.Context, b *bot.Bot, chatID, targetID int64, gb int) {
+// previewTopupNewLimitGB fetches the user's current Remnawave traffic limit and computes what it
+// would become after applying gb. Returns ok=false (and replies with the reason) when the user
+// can't be found or the result would go negative, so callers can reject before ever showing a
+// confirmation prompt for an operation that's guaranteed to fail.
+func (h Handler) previewTopupNewLimitGB(ctx context.Context, b *bot.Bot, chatID, targetID int64, gb int) (int64, bool) {
 	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
 	if err != nil || len(rwUsers) == 0 {
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave user not found for %d", targetID))
+		return 0, false
+	}
+	delta := int64(gb) * int64(config.BytesInGigabyte())
+	newLimit := int64(rwUsers[0].TrafficLimitBytes) + delta
+	if newLimit < 0 {
+		sendAdminReply(ctx, b, chatID,
+			fmt.Sprintf("❌ Нельзя: текущий лимит %d GB, вычитаете %d GB — результат отрицательный.",
+				rwUsers[0].TrafficLimitBytes/config.BytesInGigabyte(), -gb))
+		return 0, false
+	}
+	return newLimit, true
+}
+
+// execTopup applies a traffic top-up/deduction in Remnawave, records the DB topup row, and writes
+// an audit log entry. Called only after admin confirmation; re-validates against fresh Remnawave
+// state in case it changed since the confirmation prompt was shown.
+func (h Handler) execTopup(ctx context.Context, b *bot.Bot, chatID, targetID int64, gb int, source string) {
+	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
+	if err != nil || len(rwUsers) == 0 {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Remnawave user not found for %d", targetID))
+		h.logAdminAction(ctx, "topup", targetID, &gb, "failure", strPtr("remnawave user not found"), source)
 		return
 	}
 	u := rwUsers[0]
 	delta := int64(gb) * int64(config.BytesInGigabyte())
 	newLimit := int64(u.TrafficLimitBytes) + delta
 	if newLimit < 0 {
-		sendAdminReply(ctx, b, chatID,
-			fmt.Sprintf("❌ Нельзя: текущий лимит %d GB, вычитаете %d GB — результат отрицательный.",
-				u.TrafficLimitBytes/config.BytesInGigabyte(), -gb))
+		msg := fmt.Sprintf("Нельзя: текущий лимит %d GB, вычитаете %d GB — результат отрицательный.",
+			u.TrafficLimitBytes/config.BytesInGigabyte(), -gb)
+		sendAdminReply(ctx, b, chatID, "❌ "+msg)
+		h.logAdminAction(ctx, "topup", targetID, &gb, "failure", strPtr(msg), source)
 		return
 	}
 	if err := h.remnawaveClient.UpdateUserTrafficLimit(ctx, u.UUID, int(newLimit), config.TrafficLimitResetStrategy()); err != nil {
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("❌ Failed: %v", err))
+		h.logAdminAction(ctx, "topup", targetID, &gb, "failure", strPtr(err.Error()), source)
 		return
 	}
 	now := time.Now()
@@ -455,7 +615,7 @@ func (h Handler) execTopup(ctx context.Context, b *bot.Bot, chatID, targetID int
 		TargetTrafficLimitBytes: &target,
 		CompletedAt:             &now,
 	}); dbErr != nil {
-		slog.Error("admin panel topup: create DB record", "telegram_id", targetID, "error", dbErr)
+		slog.Error("admin topup: create DB record", "telegram_id", targetID, "error", dbErr)
 		reply = "\n⚠️ DB-запись не создана."
 	}
 	sign := "+"
@@ -464,8 +624,11 @@ func (h Handler) execTopup(ctx context.Context, b *bot.Bot, chatID, targetID int
 	}
 	sendAdminReply(ctx, b, chatID,
 		fmt.Sprintf("✅ %s%d GB для %d\nНовый лимит: %d GB%s", sign, gb, targetID, newLimit/int64(config.BytesInGigabyte()), reply))
-	slog.Info("admin panel topup: applied", "telegram_id", targetID, "gb", gb, "new_limit_gb", newLimit/int64(config.BytesInGigabyte()))
+	slog.Info("admin topup: applied", "telegram_id", targetID, "gb", gb, "new_limit_gb", newLimit/int64(config.BytesInGigabyte()), "source", source)
+	h.logAdminAction(ctx, "topup", targetID, &gb, "success", nil, source)
 }
+
+func strPtr(s string) *string { return &s }
 
 func (h Handler) execExtend(ctx context.Context, b *bot.Bot, chatID, targetID int64, days int) {
 	customer, err := h.customerRepository.FindByTelegramId(ctx, targetID)

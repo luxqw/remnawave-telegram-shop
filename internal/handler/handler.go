@@ -25,6 +25,7 @@ type Handler struct {
 	cache              *cache.Cache
 	remnawaveClient    *remnawave.Client
 	topupRepository    *database.TrafficTopupRepository
+	auditLogRepository *database.AdminAuditLogRepository
 	// broadcastSessions and adminSessions are pointers so value-receiver methods share the same map.
 	broadcastSessions *sync.Map
 	adminSessions     *sync.Map
@@ -42,6 +43,7 @@ func NewHandler(
 	cache *cache.Cache,
 	remnawaveClient *remnawave.Client,
 	topupRepository *database.TrafficTopupRepository,
+	auditLogRepository *database.AdminAuditLogRepository,
 ) *Handler {
 	return &Handler{
 		syncService:        syncService,
@@ -55,6 +57,7 @@ func NewHandler(
 		cache:              cache,
 		remnawaveClient:    remnawaveClient,
 		topupRepository:    topupRepository,
+		auditLogRepository: auditLogRepository,
 		broadcastSessions:  &sync.Map{},
 		adminSessions:      &sync.Map{},
 	}

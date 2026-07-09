@@ -9,6 +9,7 @@ const (
 	CallbackTrial                    = "trial"
 	CallbackActivateTrial            = "activate_trial"
 	CallbackReferral                 = "referral"
+	CallbackReferralList             = "referral_list"
 	CallbackTopup                    = "topup"
 	CallbackTopupSelect              = "topup_select"
 	CallbackTopupCancel              = "topup_cancel"
@@ -37,4 +38,6 @@ const (
 	CallbackAdminUserDisable      = "ap_user_disable"
 	CallbackAdminUserResetDevices = "ap_user_reset_dev"
 	CallbackAdminUserResetTraffic = "ap_user_reset_traffic"
+	CallbackAdminActionConfirm    = "ap_action_confirm"
+	CallbackAdminActionCancel     = "ap_action_cancel"
 )
