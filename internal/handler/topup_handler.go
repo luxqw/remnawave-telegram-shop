@@ -132,10 +132,10 @@ func (h Handler) showTopupPackages(ctx context.Context, b *bot.Bot, chatID int64
 	}
 	rows = append(rows, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    chatID,
-		MessageID: messageID,
-		ParseMode: models.ParseModeHTML,
-		Text:      h.translation.GetText(langCode, "topup_select_package"),
+		ChatID:      chatID,
+		MessageID:   messageID,
+		ParseMode:   models.ParseModeHTML,
+		Text:        h.translation.GetText(langCode, "topup_select_package"),
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
 	})
 }

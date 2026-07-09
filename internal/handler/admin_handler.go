@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -11,8 +12,8 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"remnawave-tg-shop-bot/internal/adminops"
 	"remnawave-tg-shop-bot/internal/config"
-	"remnawave-tg-shop-bot/internal/database"
 )
 
 func (h Handler) AdminUserCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -107,60 +108,30 @@ func (h Handler) AdminTopupEnrollCommandHandler(ctx context.Context, b *bot.Bot,
 		return
 	}
 
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
+	result, err := h.adminOps.TopupEnroll(ctx, targetID, "command")
+	if err != nil {
+		if errors.Is(err, adminops.ErrRemnawaveUserNotFound) {
+			sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
+		} else {
+			sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("DB error: %v", err))
+		}
 		return
 	}
-	u := rwUsers[0]
 
-	currentLimitBytes := u.TrafficLimitBytes
-	baseLimitBytes := config.TrafficLimit()
-
-	if currentLimitBytes <= baseLimitBytes {
+	switch {
+	case result.AlreadyBase:
 		sendAdminReply(ctx, b, update.Message.Chat.ID,
 			fmt.Sprintf("ℹ️ Пользователь %d имеет базовый или меньший лимит (%d GB). Topup не нужен.",
-				targetID, currentLimitBytes/config.BytesInGigabyte()))
-		return
-	}
-
-	// If ANY completed topup record exists, the user is already enrolled — block re-enrollment
-	// to avoid creating competing rollover records with different targets.
-	existing, err := h.topupRepository.FindLatestCompletedByTelegramID(ctx, targetID)
-	if err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("DB error: %v", err))
-		return
-	}
-	if existing != nil {
-		targetGB := 0
-		if existing.TargetTrafficLimitBytes != nil {
-			targetGB = int(*existing.TargetTrafficLimitBytes / int64(config.BytesInGigabyte()))
-		}
+				targetID, result.CurrentLimitGB))
+	case result.AlreadyEnrolled:
 		sendAdminReply(ctx, b, update.Message.Chat.ID,
-			fmt.Sprintf("ℹ️ Пользователь %d уже в системе (последний target: %d GB).\nЧтобы изменить — используй /admin_topup.", targetID, targetGB))
-		return
+			fmt.Sprintf("ℹ️ Пользователь %d уже в системе (последний target: %d GB).\nЧтобы изменить — используй /admin_topup.", targetID, result.ExistingTargetGB))
+	default:
+		sendAdminReply(ctx, b, update.Message.Chat.ID,
+			fmt.Sprintf("✅ Пользователь %d зачислён в систему topup\nЛимит: %d GB (базовый %d GB + %d GB extra)",
+				targetID, result.CurrentLimitGB, result.BaseLimitGB, result.DeltaGB))
+		slog.Info("admin topup enroll", "telegram_id", targetID, "delta_gb", result.DeltaGB)
 	}
-
-	deltaGB := (currentLimitBytes - baseLimitBytes) / config.BytesInGigabyte()
-	now := time.Now()
-	target := int64(currentLimitBytes)
-	if _, dbErr := h.topupRepository.Create(ctx, &database.TrafficTopup{
-		TelegramID:              targetID,
-		RemnawaveUUID:           u.UUID.String(),
-		GBAmount:                deltaGB,
-		Status:                  database.TopupStatusCompleted,
-		TargetTrafficLimitBytes: &target,
-		CompletedAt:             &now,
-	}); dbErr != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("DB error: %v", dbErr))
-		return
-	}
-
-	sendAdminReply(ctx, b, update.Message.Chat.ID,
-		fmt.Sprintf("✅ Пользователь %d зачислён в систему topup\nЛимит: %d GB (базовый %d GB + %d GB extra)",
-			targetID, currentLimitBytes/config.BytesInGigabyte(),
-			baseLimitBytes/config.BytesInGigabyte(), deltaGB))
-	slog.Info("admin topup enroll", "telegram_id", targetID, "delta_gb", deltaGB)
 }
 
 func (h Handler) AdminResetDevicesCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -243,50 +214,40 @@ func (h Handler) AdminBroadcastTextHandler(ctx context.Context, b *bot.Bot, upda
 // AdminBroadcastConfirmCallback sends the stored message to all active subscribers
 // (ExpireAt set and not yet passed).
 func (h Handler) AdminBroadcastConfirmCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
-	h.runBroadcast(ctx, b, update, "active", func(c database.Customer, now time.Time) bool {
-		return c.ExpireAt != nil && !c.ExpireAt.Before(now)
-	})
+	h.runBroadcast(ctx, b, update, "active")
 }
 
 // AdminBroadcastConfirmExpiredCallback sends the stored message to subscribers whose
 // subscription has expired (ExpireAt set and already in the past). Users who never had a
 // subscription (ExpireAt == nil) are excluded.
 func (h Handler) AdminBroadcastConfirmExpiredCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
-	h.runBroadcast(ctx, b, update, "expired", func(c database.Customer, now time.Time) bool {
-		return c.ExpireAt != nil && c.ExpireAt.Before(now)
-	})
+	h.runBroadcast(ctx, b, update, "expired")
 }
 
 // AdminBroadcastConfirmInactiveCallback sends the stored message to every customer who is not a
 // current active subscriber: expired subscriptions (ExpireAt in the past) plus customers who
 // never subscribed (ExpireAt == nil).
 func (h Handler) AdminBroadcastConfirmInactiveCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
-	h.runBroadcast(ctx, b, update, "inactive", func(c database.Customer, now time.Time) bool {
-		return c.ExpireAt == nil || c.ExpireAt.Before(now)
-	})
+	h.runBroadcast(ctx, b, update, "inactive")
 }
 
 // AdminBroadcastConfirmNewCallback sends the stored message only to customers who never had a
 // subscription (ExpireAt == nil).
 func (h Handler) AdminBroadcastConfirmNewCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
-	h.runBroadcast(ctx, b, update, "new", func(c database.Customer, now time.Time) bool {
-		return c.ExpireAt == nil
-	})
+	h.runBroadcast(ctx, b, update, "new")
 }
 
 // AdminBroadcastConfirmAllCallback sends the stored message to every customer in the database,
 // regardless of subscription state (active, expired, or never subscribed).
 func (h Handler) AdminBroadcastConfirmAllCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
-	h.runBroadcast(ctx, b, update, "all", func(c database.Customer, now time.Time) bool {
-		return true
-	})
+	h.runBroadcast(ctx, b, update, "all")
 }
 
-// runBroadcast validates the admin session, resolves the target audience, and kicks off delivery
-// in the background. Running the send loop in a goroutine lets the callback be answered
-// immediately (a long synchronous loop causes Telegram's "query is too old" error) and keeps the
-// admin UI responsive. segment is used only for logging.
-func (h Handler) runBroadcast(ctx context.Context, b *bot.Bot, update *models.Update, segment string, audience func(database.Customer, time.Time) bool) {
+// runBroadcast validates the admin session and kicks off delivery via adminops.Service.RunBroadcast
+// (which resolves the audience and delivers in the background). Answering the callback
+// immediately and polling job status in a goroutine avoids Telegram's "query is too old" error
+// from a long synchronous send loop, and keeps the admin UI responsive.
+func (h Handler) runBroadcast(ctx context.Context, b *bot.Bot, update *models.Update, segment string) {
 	if update.CallbackQuery == nil || update.CallbackQuery.From.ID != config.GetAdminTelegramId() {
 		return
 	}
@@ -300,64 +261,48 @@ func (h Handler) runBroadcast(ctx context.Context, b *bot.Bot, update *models.Up
 		return
 	}
 
-	customers, err := h.customerRepository.FindAll(ctx)
+	count, err := h.adminOps.PreviewBroadcast(ctx, segment)
 	if err != nil {
 		sendAdminReply(ctx, b, chatID, fmt.Sprintf("DB error: %v", err))
 		return
 	}
-
-	now := time.Now()
-	recipients := make([]int64, 0, len(customers))
-	for _, customer := range customers {
-		if audience(customer, now) {
-			recipients = append(recipients, customer.TelegramID)
-		}
+	jobID, err := h.adminOps.RunBroadcast(ctx, text, segment, "panel")
+	if err != nil {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("Ошибка запуска рассылки: %v", err))
+		return
 	}
 
-	sendAdminReply(ctx, b, chatID, fmt.Sprintf("🚀 Рассылка запущена\nПолучателей: <b>%d</b>\nРезультат пришлю по завершении.", len(recipients)))
+	sendAdminReply(ctx, b, chatID, fmt.Sprintf("🚀 Рассылка запущена\nПолучателей: <b>%d</b>\nРезультат пришлю по завершении.", count))
 
-	// Detach from the request context so the loop isn't cancelled when the handler returns.
+	// Detach from the request context so polling isn't cancelled when the handler returns.
 	bgCtx := context.WithoutCancel(ctx)
-	go h.deliverBroadcast(bgCtx, b, chatID, text, segment, recipients)
+	go h.reportBroadcastCompletion(bgCtx, b, chatID, jobID)
 }
 
-// deliverBroadcast sends text to every recipient, throttling to stay within Telegram limits, and
-// reports a breakdown of failures back to the admin. Unreachable recipients (blocked the bot,
-// deactivated, or never opened a chat) are counted separately from unexpected errors.
-func (h Handler) deliverBroadcast(ctx context.Context, b *bot.Bot, chatID int64, text, segment string, recipients []int64) {
-	sent, unreachable, otherFailed := 0, 0, 0
-	for _, telegramID := range recipients {
-		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: telegramID, Text: text, ParseMode: models.ParseModeHTML})
-		switch {
-		case err == nil:
-			sent++
-		case isUserUnreachable(err):
-			unreachable++
-		default:
-			otherFailed++
-			slog.Warn("broadcast: send failed", "telegram_id", telegramID, "error", err)
+// reportBroadcastCompletion polls adminops for job progress and sends the admin a completion
+// summary once delivery finishes, preserving the bot's original synchronous-looking UX even
+// though delivery now happens inside adminops.
+func (h Handler) reportBroadcastCompletion(ctx context.Context, b *bot.Bot, chatID int64, jobID string) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			progress, ok := h.adminOps.BroadcastStatus(jobID)
+			if !ok {
+				return
+			}
+			if !progress.Done {
+				continue
+			}
+			sendAdminReply(ctx, b, chatID, fmt.Sprintf(
+				"✅ Рассылка завершена\nОтправлено: <b>%d</b>\nОшибок: <b>%d</b>\n• недоступны/заблокировали: %d\n• прочее: %d",
+				progress.Sent, progress.Failed, progress.Unreachable, progress.OtherFailed))
+			return
 		}
-		time.Sleep(40 * time.Millisecond)
 	}
-	failed := unreachable + otherFailed
-	sendAdminReply(ctx, b, chatID, fmt.Sprintf(
-		"✅ Рассылка завершена\nОтправлено: <b>%d</b>\nОшибок: <b>%d</b>\n• недоступны/заблокировали: %d\n• прочее: %d",
-		sent, failed, unreachable, otherFailed))
-	slog.Info("admin broadcast: done", "segment", segment, "sent", sent, "failed", failed, "unreachable", unreachable, "other", otherFailed)
-}
-
-// isUserUnreachable reports whether a SendMessage error means the recipient can't be reached
-// (blocked the bot, deactivated their account, or never started a chat). These are expected for
-// cold audiences and are not actionable bugs.
-func isUserUnreachable(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "forbidden") ||
-		strings.Contains(msg, "bot was blocked") ||
-		strings.Contains(msg, "user is deactivated") ||
-		strings.Contains(msg, "chat not found")
 }
 
 // AdminBroadcastTestCallback sends the stored message only to the admin.
@@ -416,36 +361,7 @@ func (h Handler) AdminExtendCommandHandler(ctx context.Context, b *bot.Bot, upda
 		sendAdminReply(ctx, b, update.Message.Chat.ID, "Invalid days (must be positive)")
 		return
 	}
-	customer, err := h.customerRepository.FindByTelegramId(ctx, targetID)
-	if err != nil || customer == nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("User %d not found", targetID))
-		return
-	}
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
-	if err != nil || len(rwUsers) == 0 {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave user not found for %d", targetID))
-		return
-	}
-	newUser, err := h.remnawaveClient.CreateOrUpdateUser(ctx, customer.ID, customer.TelegramID, rwUsers[0].TrafficLimitBytes, days, customer.IsTrial)
-	if err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("Remnawave error: %v", err))
-		return
-	}
-	dbNote := ""
-	if err := h.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{
-		"expire_at":         newUser.ExpireAt,
-		"subscription_link": newUser.SubscriptionUrl,
-	}); err != nil {
-		slog.Error("admin extend: update customer DB", "error", err)
-		dbNote = "\n⚠️ DB-запись не обновлена — бот не видит новую дату."
-	}
-	expireDate := newUser.ExpireAt.Format("02.01.2006")
-	sendAdminReply(ctx, b, update.Message.Chat.ID,
-		fmt.Sprintf("Продлено на %d дн. для %d. Подписка до: %s%s", days, targetID, expireDate, dbNote))
-	userText := fmt.Sprintf("Хорошие новости! Ваша подписка продлена на %d %s.\n\nАктивна до: %s", days, pluralDays(days), expireDate)
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: targetID, ParseMode: models.ParseModeHTML,
-		Text: "<b>" + userText + "</b>"})
-	slog.Info("admin extend", "telegram_id", targetID, "days", days)
+	h.execExtend(ctx, b, update.Message.Chat.ID, targetID, days, "command")
 }
 
 func (h Handler) AdminDisableCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -600,14 +516,12 @@ func (h Handler) AdminSetTrialCommandHandler(ctx context.Context, b *bot.Bot, up
 		return
 	}
 
-	customer, err := h.customerRepository.FindByTelegramId(ctx, targetID)
-	if err != nil || customer == nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("❌ User %d not found", targetID))
-		return
-	}
-
-	if err := h.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{"is_trial": isTrial}); err != nil {
-		sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("❌ DB error: %v", err))
+	if err := h.adminOps.SetTrial(ctx, targetID, isTrial, "command"); err != nil {
+		if errors.Is(err, adminops.ErrCustomerNotFound) {
+			sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("❌ User %d not found", targetID))
+		} else {
+			sendAdminReply(ctx, b, update.Message.Chat.ID, fmt.Sprintf("❌ DB error: %v", err))
+		}
 		return
 	}
 
@@ -617,7 +531,6 @@ func (h Handler) AdminSetTrialCommandHandler(ctx context.Context, b *bot.Bot, up
 	}
 	sendAdminReply(ctx, b, update.Message.Chat.ID,
 		fmt.Sprintf("✅ Пользователь %d → <b>%s</b>\n\nТеперь:\n• Докупить трафик: %v\n• Мои устройства: видит", targetID, status, !isTrial))
-	slog.Info("admin set_trial", "telegram_id", targetID, "is_trial", isTrial)
 }
 
 // AdminAuditCommandHandler handles /admin_audit <telegram_id> — shows the last 20 audit-logged

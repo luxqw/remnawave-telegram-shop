@@ -1,4 +1,4 @@
-﻿package tribute
+package tribute
 
 import (
 	"context"
@@ -161,6 +161,30 @@ func (c *Client) RetryFailed(ctx context.Context) {
 			slog.Info("webhook retry: recovered", "id", item.ID, "event", item.EventType)
 		}
 	}
+}
+
+// RetryByID re-dispatches a single webhook_inbox item on demand (admin webapp "Retry" button),
+// mirroring the per-item body of RetryFailed's loop but for one explicitly chosen ID rather than
+// the cron's batch of retryable failures.
+func (c *Client) RetryByID(ctx context.Context, id int64) error {
+	item, err := c.webhookInbox.FindByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("find webhook inbox item: %w", err)
+	}
+	if item == nil {
+		return fmt.Errorf("webhook inbox item %d not found", id)
+	}
+	var wh SubscriptionWebhook
+	if err := json.Unmarshal(item.Payload, &wh); err != nil {
+		_ = c.webhookInbox.MarkFailed(ctx, item.ID, "unmarshal: "+err.Error())
+		return fmt.Errorf("unmarshal payload: %w", err)
+	}
+	if err := c.dispatch(ctx, wh, item.Payload); err != nil {
+		_ = c.webhookInbox.MarkFailed(ctx, item.ID, err.Error())
+		return fmt.Errorf("dispatch: %w", err)
+	}
+	_ = c.webhookInbox.MarkProcessed(ctx, item.ID)
+	return nil
 }
 
 func (c *Client) cancelSubscriptionHandler(ctx context.Context, wh SubscriptionWebhook) error {

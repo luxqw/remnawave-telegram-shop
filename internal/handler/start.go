@@ -65,8 +65,8 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 	greetingText := buildGreetingText(existingCustomer, langCode)
 
 	m, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "🧹",
+		ChatID:      update.Message.Chat.ID,
+		Text:        "🧹",
 		ReplyMarkup: models.ReplyKeyboardRemove{RemoveKeyboard: true},
 	})
 	if err != nil {

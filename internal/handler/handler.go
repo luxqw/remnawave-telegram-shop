@@ -3,6 +3,7 @@ package handler
 import (
 	"sync"
 
+	"remnawave-tg-shop-bot/internal/adminops"
 	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/cryptopay"
 	"remnawave-tg-shop-bot/internal/database"
@@ -26,6 +27,10 @@ type Handler struct {
 	remnawaveClient    *remnawave.Client
 	topupRepository    *database.TrafficTopupRepository
 	auditLogRepository *database.AdminAuditLogRepository
+	// adminOps holds the Telegram-agnostic business logic behind every admin mutating action.
+	// The bot handlers in this package are thin adapters over it (see admin_panel.go,
+	// admin_handler.go, admin_fix_strategy.go); the admin web app calls the same instance.
+	adminOps *adminops.Service
 	// broadcastSessions and adminSessions are pointers so value-receiver methods share the same map.
 	broadcastSessions *sync.Map
 	adminSessions     *sync.Map
@@ -44,6 +49,7 @@ func NewHandler(
 	remnawaveClient *remnawave.Client,
 	topupRepository *database.TrafficTopupRepository,
 	auditLogRepository *database.AdminAuditLogRepository,
+	adminOps *adminops.Service,
 ) *Handler {
 	return &Handler{
 		syncService:        syncService,
@@ -58,6 +64,7 @@ func NewHandler(
 		remnawaveClient:    remnawaveClient,
 		topupRepository:    topupRepository,
 		auditLogRepository: auditLogRepository,
+		adminOps:           adminOps,
 		broadcastSessions:  &sync.Map{},
 		adminSessions:      &sync.Map{},
 	}

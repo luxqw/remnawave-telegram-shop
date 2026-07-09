@@ -66,6 +66,11 @@ type config struct {
 	topupPackage25                                            TopupPackageConfig
 	topupPackage50                                            TopupPackageConfig
 	topupPackages                                             map[int]TopupPackageConfig
+	adminWebAppEnabled                                        bool
+	adminWebAppJWTSecret                                      string
+	adminWebAppURL                                            string
+	adminSessionTTLMinutes                                    int
+	adminWebAppInitDataMaxAgeHours                            int
 }
 
 var conf config
@@ -345,6 +350,26 @@ func MoynalogPassword() string {
 
 func IsMoynalogEnabled() bool {
 	return conf.isMoynalogEnabled
+}
+
+func IsAdminWebAppEnabled() bool {
+	return conf.adminWebAppEnabled
+}
+
+func AdminWebAppJWTSecret() string {
+	return conf.adminWebAppJWTSecret
+}
+
+func AdminWebAppURL() string {
+	return conf.adminWebAppURL
+}
+
+func AdminSessionTTLMinutes() int {
+	return conf.adminSessionTTLMinutes
+}
+
+func AdminWebAppInitDataMaxAgeHours() int {
+	return conf.adminWebAppInitDataMaxAgeHours
 }
 
 func mustEnv(key string) string {
@@ -655,6 +680,14 @@ func InitConfig() {
 			conf.topupPackage25.ProductID: conf.topupPackage25,
 			conf.topupPackage50.ProductID: conf.topupPackage50,
 		}
+	}
+
+	conf.adminWebAppEnabled = envBool("ADMIN_WEBAPP_ENABLED")
+	if conf.adminWebAppEnabled {
+		conf.adminWebAppJWTSecret = mustEnv("ADMIN_WEBAPP_JWT_SECRET")
+		conf.adminWebAppURL = envStringDefault("ADMIN_WEBAPP_URL", "")
+		conf.adminSessionTTLMinutes = envIntDefault("ADMIN_SESSION_TTL_MINUTES", 1440)
+		conf.adminWebAppInitDataMaxAgeHours = envIntDefault("ADMIN_WEBAPP_INITDATA_MAX_AGE_HOURS", 24)
 	}
 }
 

@@ -2,10 +2,12 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
@@ -111,4 +113,74 @@ func (r *WebhookInboxRepository) FindRetryable(ctx context.Context, maxAttempts 
 		results = append(results, wh)
 	}
 	return results, rows.Err()
+}
+
+const webhookInboxSelectCols = "id, payload, event_type, status, attempts, error_msg, created_at, processed_at"
+
+func scanWebhookInbox(row interface{ Scan(...interface{}) error }, wh *WebhookInbox) error {
+	return row.Scan(&wh.ID, &wh.Payload, &wh.EventType, &wh.Status, &wh.Attempts, &wh.ErrorMsg, &wh.CreatedAt, &wh.ProcessedAt)
+}
+
+// FindByID fetches a single webhook_inbox row, used by the admin webapp's retry endpoint and
+// detail view. Returns (nil, nil) when not found, matching the repository-wide convention.
+func (r *WebhookInboxRepository) FindByID(ctx context.Context, id int64) (*WebhookInbox, error) {
+	q, args, err := sq.Select(webhookInboxSelectCols).
+		From("webhook_inbox").
+		Where(sq.Eq{"id": id}).
+		PlaceholderFormat(sq.Dollar).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build select: %w", err)
+	}
+	var wh WebhookInbox
+	if err := scanWebhookInbox(r.pool.QueryRow(ctx, q, args...), &wh); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query webhook_inbox by id: %w", err)
+	}
+	return &wh, nil
+}
+
+// FindAllPaginated powers the admin webapp webhook inbox monitoring screen. status filters when
+// non-empty ("pending"/"processed"/"failed"); pass "" for all statuses.
+func (r *WebhookInboxRepository) FindAllPaginated(ctx context.Context, status string, limit, offset int) ([]WebhookInbox, int64, error) {
+	selectBuilder := sq.Select(webhookInboxSelectCols).From("webhook_inbox")
+	countBuilder := sq.Select("COUNT(*)").From("webhook_inbox")
+	if status != "" {
+		selectBuilder = selectBuilder.Where(sq.Eq{"status": status})
+		countBuilder = countBuilder.Where(sq.Eq{"status": status})
+	}
+	selectBuilder = selectBuilder.OrderBy("created_at DESC").Limit(uint64(limit)).Offset(uint64(offset)).PlaceholderFormat(sq.Dollar)
+
+	q, args, err := selectBuilder.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("build select: %w", err)
+	}
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query paginated webhook_inbox: %w", err)
+	}
+	defer rows.Close()
+	var results []WebhookInbox
+	for rows.Next() {
+		var wh WebhookInbox
+		if err := scanWebhookInbox(rows, &wh); err != nil {
+			return nil, 0, fmt.Errorf("scan: %w", err)
+		}
+		results = append(results, wh)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate rows: %w", err)
+	}
+
+	countSQL, countArgs, err := countBuilder.PlaceholderFormat(sq.Dollar).ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("build count: %w", err)
+	}
+	var total int64
+	if err := r.pool.QueryRow(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count webhook_inbox: %w", err)
+	}
+	return results, total, nil
 }
