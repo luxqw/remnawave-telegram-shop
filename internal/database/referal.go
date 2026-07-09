@@ -96,6 +96,58 @@ func (r *ReferralRepository) CountByReferrer(ctx context.Context, referrerID int
 	return count, nil
 }
 
+func (r *ReferralRepository) CountGrantedByReferrer(ctx context.Context, referrerID int64) (int, error) {
+	query := sq.Select("COUNT(*)").
+		From("referral").
+		Where(sq.Eq{"referrer_id": referrerID, "bonus_granted": true}).
+		PlaceholderFormat(sq.Dollar)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("failed to build count granted referrals by referrer query: %w", err)
+	}
+
+	var count int
+	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to scan count of granted referrals: %w", err)
+	}
+	return count, nil
+}
+
+func (r *ReferralRepository) FindByReferrerPaginated(ctx context.Context, referrerID int64, limit, offset int) ([]Referral, error) {
+	query := sq.Select("id", "referrer_id", "referee_id", "used_at", "bonus_granted").
+		From("referral").
+		Where(sq.Eq{"referrer_id": referrerID}).
+		OrderBy("used_at DESC").
+		Limit(uint64(limit)).
+		Offset(uint64(offset)).
+		PlaceholderFormat(sq.Dollar)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build select paginated referrals by referrer query: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query paginated referrals by referrer: %w", err)
+	}
+	defer rows.Close()
+
+	var list []Referral
+	for rows.Next() {
+		var ref Referral
+		if err := rows.Scan(&ref.ID, &ref.ReferrerID, &ref.RefereeID, &ref.UsedAt, &ref.BonusGranted); err != nil {
+			return nil, fmt.Errorf("failed to scan referral row: %w", err)
+		}
+		list = append(list, ref)
+	}
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("error iterating referral rows: %w", rows.Err())
+	}
+	return list, nil
+}
+
 func (r *ReferralRepository) FindByReferee(ctx context.Context, refereeID int64) (*Referral, error) {
 	query := sq.Select("id", "referrer_id", "referee_id", "used_at", "bonus_granted").
 		From("referral").
