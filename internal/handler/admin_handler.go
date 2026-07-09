@@ -520,6 +520,46 @@ func (h Handler) AdminStatsCommandHandler(ctx context.Context, b *bot.Bot, updat
 	sendAdminReply(ctx, b, update.Message.Chat.ID, msg)
 }
 
+// AdminReferralsCommandHandler handles /admin_referrals — a global overview of the referral
+// program across all customers: total invites, how many converted to a granted bonus, and the
+// most recent referral events (referrer -> referee, date, status).
+func (h Handler) AdminReferralsCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	chatID := update.Message.Chat.ID
+	total, err := h.referralRepository.CountAll(ctx)
+	if err != nil {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("DB error: %v", err))
+		return
+	}
+	if total == 0 {
+		sendAdminReply(ctx, b, chatID, "👥 <b>Рефералы</b>\n\nПока никто никого не пригласил.")
+		return
+	}
+	granted, err := h.referralRepository.CountAllGranted(ctx)
+	if err != nil {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("DB error: %v", err))
+		return
+	}
+
+	const recentLimit = 20
+	recent, err := h.referralRepository.FindRecent(ctx, recentLimit)
+	if err != nil {
+		sendAdminReply(ctx, b, chatID, fmt.Sprintf("DB error: %v", err))
+		return
+	}
+
+	msg := fmt.Sprintf("👥 <b>Рефералы</b>\n\nВсего приглашений: <b>%d</b>\nБонус начислен: <b>%d</b>\nКонверсия: <b>%.0f%%</b>\n\n<b>Последние %d:</b>\n",
+		total, granted, float64(granted)/float64(total)*100, len(recent))
+	for _, ref := range recent {
+		icon := "⏳"
+		if ref.BonusGranted {
+			icon = "✅"
+		}
+		msg += fmt.Sprintf("%s <code>%d</code> → <code>%d</code>  %s\n", icon, ref.ReferrerID, ref.RefereeID, ref.UsedAt.Format("02.01.2006"))
+	}
+	msg += "\nПодробности по конкретному рефереру: /admin_user &lt;telegram_id&gt;"
+	sendAdminReply(ctx, b, chatID, msg)
+}
+
 func pluralDays(n int) string {
 	switch {
 	case n%10 == 1 && n%100 != 11:

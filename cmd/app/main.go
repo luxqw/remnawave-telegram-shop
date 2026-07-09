@@ -228,6 +228,7 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_reset_traffic", bot.MatchTypePrefix, h.AdminResetTrafficCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_stats", bot.MatchTypeExact, h.AdminStatsCommandHandler, isAdminMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_audit", bot.MatchTypePrefix, h.AdminAuditCommandHandler, isAdminMiddleware)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_referrals", bot.MatchTypeExact, h.AdminReferralsCommandHandler, isAdminMiddleware)
 
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackReferral, bot.MatchTypeExact, h.ReferralCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackReferralList, bot.MatchTypePrefix, h.ReferralListCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
@@ -274,6 +275,8 @@ func main() {
 			log.Fatalf("Server error: %v", err)
 		}
 	}()
+
+	registerAdminCommands(ctx, b)
 
 	slog.Info("Bot is starting...")
 	b.Start(ctx)
@@ -330,6 +333,40 @@ func isAdminMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
 		} else {
 			return
 		}
+	}
+}
+
+// registerAdminCommands publishes the full /admin_* command list to Telegram's native "/" menu,
+// scoped to the admin's own chat only (regular customers never see these). Without this, typing
+// "/" only autocompletes whatever the admin happens to remember — Telegram never learns about
+// commands that were only ever registered as message handlers.
+func registerAdminCommands(ctx context.Context, b *bot.Bot) {
+	commands := []models.BotCommand{
+		{Command: "admin", Description: "Открыть панель администратора"},
+		{Command: "admin_user", Description: "Карточка пользователя: /admin_user <id>"},
+		{Command: "admin_stats", Description: "Статистика бота"},
+		{Command: "admin_referrals", Description: "Обзор реферальной программы"},
+		{Command: "admin_audit", Description: "Аудит действий: /admin_audit <id>"},
+		{Command: "admin_extend", Description: "Продлить подписку: /admin_extend <id> <days>"},
+		{Command: "admin_disable", Description: "Отключить пользователя: /admin_disable <id>"},
+		{Command: "admin_enable", Description: "Включить пользователя: /admin_enable <id>"},
+		{Command: "admin_reset_traffic", Description: "Сбросить трафик: /admin_reset_traffic <id>"},
+		{Command: "admin_reset_devices", Description: "Сбросить устройства: /admin_reset_devices <id>"},
+		{Command: "admin_topup", Description: "Начислить/списать ГБ: /admin_topup <id> <gb>"},
+		{Command: "admin_topup_enroll", Description: "Зачислить существующий топап в систему"},
+		{Command: "admin_set_trial", Description: "Триал-статус: /admin_set_trial <id> on|off"},
+		{Command: "admin_broadcast", Description: "Рассылка сообщения аудитории"},
+		{Command: "sync", Description: "Синхронизация пользователей с Remnawave"},
+		{Command: "fix_traffic_strategy", Description: "Аудит/фикс стратегии сброса трафика"},
+		{Command: "cancel", Description: "Отменить текущий диалог"},
+	}
+
+	ok, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
+		Commands: commands,
+		Scope:    &models.BotCommandScopeChat{ChatID: config.GetAdminTelegramId()},
+	})
+	if err != nil || !ok {
+		slog.Error("failed to register admin command list", "error", err)
 	}
 }
 
