@@ -182,6 +182,49 @@ func (r *ReferralRepository) FindRecent(ctx context.Context, limit int) ([]Refer
 	return list, nil
 }
 
+// FindRecentPaginated returns the most recent referral records across every referrer, newest
+// first, plus the total row count. Used by the admin webapp referrals list screen.
+func (r *ReferralRepository) FindRecentPaginated(ctx context.Context, limit, offset int) ([]Referral, int64, error) {
+	sqlStr, args, err := sq.Select("id", "referrer_id", "referee_id", "used_at", "bonus_granted").
+		From("referral").
+		OrderBy("used_at DESC").
+		Limit(uint64(limit)).
+		Offset(uint64(offset)).
+		PlaceholderFormat(sq.Dollar).
+		ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to build select paginated recent referrals query: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query paginated recent referrals: %w", err)
+	}
+	defer rows.Close()
+
+	var list []Referral
+	for rows.Next() {
+		var ref Referral
+		if err := rows.Scan(&ref.ID, &ref.ReferrerID, &ref.RefereeID, &ref.UsedAt, &ref.BonusGranted); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan referral row: %w", err)
+		}
+		list = append(list, ref)
+	}
+	if rows.Err() != nil {
+		return nil, 0, fmt.Errorf("error iterating referral rows: %w", rows.Err())
+	}
+
+	countSQL, countArgs, err := sq.Select("COUNT(*)").From("referral").PlaceholderFormat(sq.Dollar).ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to build count referrals query: %w", err)
+	}
+	var total int64
+	if err := r.pool.QueryRow(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count referrals: %w", err)
+	}
+	return list, total, nil
+}
+
 func (r *ReferralRepository) FindByReferrerPaginated(ctx context.Context, referrerID int64, limit, offset int) ([]Referral, error) {
 	query := sq.Select("id", "referrer_id", "referee_id", "used_at", "bonus_granted").
 		From("referral").

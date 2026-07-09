@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -239,4 +239,3 @@ func buildDeviceShortName(idx int, d remnawave.HwidDevice) string {
 	}
 	return fmt.Sprintf("устройство #%d", idx+1)
 }
-

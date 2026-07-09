@@ -345,3 +345,12 @@ fabric.properties
 # Compiled binaries
 app
 /bin/
+
+# Admin webapp frontend (web/admin) build output and deps — the Go build embeds
+# internal/webapp/static/dist directly; a placeholder index.html is committed there so
+# `go build ./...` works without running the frontend build.
+web/admin/node_modules/
+web/admin/dist/
+internal/webapp/static/dist/*
+!internal/webapp/static/dist/index.html
+web/admin/*.tsbuildinfo

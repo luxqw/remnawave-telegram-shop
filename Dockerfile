@@ -3,12 +3,23 @@ WORKDIR /modules
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Builds the admin web app SPA (Preact+TS+Vite). Its output is copied into the Go builder stage
+# below, before `go build`, so it ends up embedded in the binary via //go:embed. The final
+# `scratch` stage is unaffected — it only ever copies the compiled Go binary, never node_modules.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS webbuild
+WORKDIR /web
+COPY web/admin/package.json web/admin/package-lock.json ./
+RUN npm ci
+COPY web/admin ./
+RUN npm run build
+
 FROM --platform=$BUILDPLATFORM golang:1.25.3-alpine AS builder
 WORKDIR /app
 
 COPY --from=modules /go/pkg /go/pkg
 
 COPY . .
+COPY --from=webbuild /web/dist ./internal/webapp/static/dist
 
 RUN apk update && apk add --no-cache ca-certificates tzdata
 RUN update-ca-certificates

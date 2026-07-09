@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"remnawave-tg-shop-bot/internal/adminops"
 	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/cryptopay"
@@ -21,6 +22,7 @@ import (
 	"remnawave-tg-shop-bot/internal/sync"
 	"remnawave-tg-shop-bot/internal/translation"
 	"remnawave-tg-shop-bot/internal/tribute"
+	"remnawave-tg-shop-bot/internal/webapp"
 	"remnawave-tg-shop-bot/internal/yookasa"
 	"strconv"
 	"strings"
@@ -131,7 +133,17 @@ func main() {
 
 	syncService := sync.NewSyncService(remnawaveClient, customerRepository)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository, auditLogRepository)
+	// tributeClient is constructed here (rather than only inside the webhook-route block below)
+	// because both the admin webapp and adminops-adjacent wiring need a reference to it; it stays
+	// nil when Tribute webhooks aren't configured, and every consumer treats that as optional.
+	var tributeClient *tribute.Client
+	if config.GetTributeWebHookUrl() != "" {
+		tributeClient = tribute.NewClient(paymentService, customerRepository, topupRepository, webhookInboxRepository, remnawaveClient, b)
+	}
+
+	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, remnawaveClient, syncService, b)
+
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository, auditLogRepository, opsService)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
@@ -257,12 +269,21 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/healthcheck", fullHealthHandler(pool, remnawaveClient))
-	if config.GetTributeWebHookUrl() != "" {
-		tributeClient := tribute.NewClient(paymentService, customerRepository, topupRepository, webhookInboxRepository, remnawaveClient, b)
+	if tributeClient != nil {
 		mux.Handle(config.GetTributeWebHookUrl(), tributeClient.WebHookHandler())
 		webhookRetryCron := setupWebhookRetryCron(tributeClient)
 		webhookRetryCron.Start()
 		defer webhookRetryCron.Stop()
+	}
+
+	if config.IsAdminWebAppEnabled() {
+		webappHandler := webapp.NewHandler(
+			customerRepository, purchaseRepository, referralRepository, auditLogRepository,
+			webhookInboxRepository, remnawaveClient, tributeClient, opsService, pool,
+			webapp.BuildInfo{Version: Version, Commit: Commit, BuildDate: BuildDate},
+		)
+		mux.Handle("/admin/", webappHandler)
+		slog.Info("Admin webapp enabled", "url", config.AdminWebAppURL())
 	}
 
 	srv := &http.Server{

@@ -138,6 +138,11 @@ The application requires the following environment variables to be set:
 | `TOPUP_PACKAGE_50GB_ID`  | Tribute `subscription_id` for the 50 GB package.                                                                                          |
 | `TOPUP_PACKAGE_50GB_URL` | Tribute payment URL for the 50 GB package.                                                                                                 |
 | `TOPUP_PACKAGE_50GB_PRICE` | Display price for 50 GB package.                                                                                                         |
+| `ADMIN_WEBAPP_ENABLED`  | Enable the admin web app (Telegram Mini App), served at `/admin/` on the same port as `/healthcheck` (true/false). Default: false.        |
+| `ADMIN_WEBAPP_JWT_SECRET` | Secret used to sign admin web app session tokens. Required when `ADMIN_WEBAPP_ENABLED=true`. Must be different from the bot token.      |
+| `ADMIN_WEBAPP_URL`      | Public HTTPS URL of the admin web app (e.g. `https://your-domain.example/admin/`). When set, a "🌐 Веб-панель" button appears in `/admin` for the configured admin only. |
+| `ADMIN_SESSION_TTL_MINUTES` | Admin web app session token lifetime in minutes. Default: 1440 (24h).                                                                |
+| `ADMIN_WEBAPP_INITDATA_MAX_AGE_HOURS` | Max age of Telegram `initData` accepted at login, in hours. Default: 24.                                                   |
 
 ## User Interface
 
@@ -299,6 +304,11 @@ docker compose down && docker compose up -d
 ## Reverse Proxy Configuration
 
 If you are not using ngrok from `docker-compose.yml`, you need to set up a reverse proxy to forward requests to the bot.
+
+> If your proxy config only forwards specific paths (e.g. just `/healthcheck` or the Tribute
+> webhook path) rather than the whole host, and you enable `ADMIN_WEBAPP_ENABLED`, add a rule
+> forwarding `/admin` (and `/admin/*`) to the same backend as well — otherwise the admin web app
+> won't be reachable even though the bot itself is running fine.
 
 <details>
 <summary>Traefik Configuration</summary>

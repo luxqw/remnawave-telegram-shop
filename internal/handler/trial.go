@@ -29,7 +29,7 @@ func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 	if c.SubscriptionLink != nil {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
-			Text: "У вас уже есть активная подписка",
+			Text:            "У вас уже есть активная подписка",
 		})
 		return
 	}
@@ -66,7 +66,7 @@ func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, u
 	if c.SubscriptionLink != nil {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
-			Text: "У вас уже есть активная подписка",
+			Text:            "У вас уже есть активная подписка",
 		})
 		return
 	}

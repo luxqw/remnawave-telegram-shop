@@ -1,4 +1,4 @@
-﻿package database
+package database
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log/slog"
 	"remnawave-tg-shop-bot/utils"
+	"strconv"
 	"time"
 )
 
@@ -257,6 +258,133 @@ func (cr *CustomerRepository) UpdateBatch(ctx context.Context, customers []Custo
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 	return nil
+}
+
+// CustomerStats holds aggregate counts for the admin dashboard. Computed with SQL COUNT FILTER
+// instead of loading every customer row into memory and iterating (as AdminStatsCommandHandler
+// currently does), so it stays cheap as the customer table grows.
+type CustomerStats struct {
+	Total       int64
+	ActivePaid  int64
+	ActiveTrial int64
+	Expired     int64
+	NoSub       int64
+}
+
+func (cr *CustomerRepository) CountStats(ctx context.Context) (CustomerStats, error) {
+	query := `SELECT
+		COUNT(*) AS total,
+		COUNT(*) FILTER (WHERE expire_at IS NOT NULL AND expire_at >= NOW() AND is_trial = false) AS active_paid,
+		COUNT(*) FILTER (WHERE expire_at IS NOT NULL AND expire_at >= NOW() AND is_trial = true) AS active_trial,
+		COUNT(*) FILTER (WHERE expire_at IS NOT NULL AND expire_at < NOW()) AS expired,
+		COUNT(*) FILTER (WHERE expire_at IS NULL) AS no_sub
+		FROM customer`
+	var s CustomerStats
+	if err := cr.pool.QueryRow(ctx, query).Scan(&s.Total, &s.ActivePaid, &s.ActiveTrial, &s.Expired, &s.NoSub); err != nil {
+		return CustomerStats{}, fmt.Errorf("count customer stats: %w", err)
+	}
+	return s, nil
+}
+
+// customerFilterWhere builds the shared WHERE clause for FindAllPaginated. filter narrows by
+// subscription state, search matches an exact telegram_id (non-numeric search terms are ignored,
+// matching how the bot's /admin_user lookup works today). Returns nil when neither is set.
+func customerFilterWhere(filter, search string) sq.And {
+	var conds sq.And
+	switch filter {
+	case "active":
+		conds = append(conds, sq.NotEq{"expire_at": nil}, sq.Expr("expire_at >= NOW()"), sq.Eq{"is_trial": false})
+	case "trial":
+		conds = append(conds, sq.NotEq{"expire_at": nil}, sq.Expr("expire_at >= NOW()"), sq.Eq{"is_trial": true})
+	case "expired":
+		conds = append(conds, sq.NotEq{"expire_at": nil}, sq.Expr("expire_at < NOW()"))
+	case "no_sub":
+		conds = append(conds, sq.Eq{"expire_at": nil})
+	}
+	if id, err := strconv.ParseInt(search, 10, 64); err == nil && search != "" {
+		conds = append(conds, sq.Eq{"telegram_id": id})
+	}
+	return conds
+}
+
+// FindAllPaginated powers the admin webapp users list: filter is one of "", "active", "trial",
+// "expired", "no_sub"; search (when a valid int64) narrows to a single telegram_id. Returns the
+// page of customers plus the total row count matching the filter (for pagination UI).
+func (cr *CustomerRepository) FindAllPaginated(ctx context.Context, filter, search string, limit, offset int) ([]Customer, int64, error) {
+	where := customerFilterWhere(filter, search)
+
+	selectBuilder := sq.Select(cols...).From("customer")
+	countBuilder := sq.Select("COUNT(*)").From("customer")
+	if len(where) > 0 {
+		selectBuilder = selectBuilder.Where(where)
+		countBuilder = countBuilder.Where(where)
+	}
+	selectBuilder = selectBuilder.OrderBy("created_at DESC").Limit(uint64(limit)).Offset(uint64(offset)).PlaceholderFormat(sq.Dollar)
+
+	sqlStr, args, err := selectBuilder.ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to build paginated select query: %w", err)
+	}
+	rows, err := cr.pool.Query(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query paginated customers: %w", err)
+	}
+	defer rows.Close()
+	var customers []Customer
+	for rows.Next() {
+		var c Customer
+		if err := scanCustomer(rows, &c); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan customer row: %w", err)
+		}
+		customers = append(customers, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating over customer rows: %w", err)
+	}
+
+	countSQL, countArgs, err := countBuilder.PlaceholderFormat(sq.Dollar).ToSql()
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to build count query: %w", err)
+	}
+	var total int64
+	if err := cr.pool.QueryRow(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count customers: %w", err)
+	}
+	return customers, total, nil
+}
+
+// DayCount is one bucket of a per-day time series (used by dashboard charts).
+type DayCount struct {
+	Day   time.Time
+	Count int64
+}
+
+// NewCustomersByDay returns the number of new customers per day over the last `days` days,
+// oldest first, for the dashboard growth chart. Empty days are omitted by the query; the caller
+// fills gaps when rendering.
+func (cr *CustomerRepository) NewCustomersByDay(ctx context.Context, days int) ([]DayCount, error) {
+	query := `SELECT date_trunc('day', created_at) AS day, COUNT(*)
+		FROM customer
+		WHERE created_at >= NOW() - make_interval(days => $1)
+		GROUP BY day
+		ORDER BY day ASC`
+	rows, err := cr.pool.Query(ctx, query, days)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query new customers by day: %w", err)
+	}
+	defer rows.Close()
+	var result []DayCount
+	for rows.Next() {
+		var d DayCount
+		if err := rows.Scan(&d.Day, &d.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan day count row: %w", err)
+		}
+		result = append(result, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating day count rows: %w", err)
+	}
+	return result, nil
 }
 
 func (cr *CustomerRepository) DeleteByNotInTelegramIds(ctx context.Context, telegramIDs []int64) error {
