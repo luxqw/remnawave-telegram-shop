@@ -164,6 +164,7 @@ type auditLogDTO struct {
 	Action           string    `json:"action"`
 	TargetTelegramID int64     `json:"targetTelegramId"`
 	ParamInt         *int      `json:"paramInt"`
+	ParamText        *string   `json:"paramText"`
 	Outcome          string    `json:"outcome"`
 	ErrorMessage     *string   `json:"errorMessage"`
 	Source           string    `json:"source"`
@@ -172,7 +173,7 @@ type auditLogDTO struct {
 func toAuditLogDTO(l database.AdminAuditLog) auditLogDTO {
 	return auditLogDTO{
 		ID: l.ID, CreatedAt: l.CreatedAt, AdminTelegramID: l.AdminTelegramID, Action: l.Action,
-		TargetTelegramID: l.TargetTelegramID, ParamInt: l.ParamInt, Outcome: l.Outcome,
+		TargetTelegramID: l.TargetTelegramID, ParamInt: l.ParamInt, ParamText: l.ParamText, Outcome: l.Outcome,
 		ErrorMessage: l.ErrorMessage, Source: l.Source,
 	}
 }
@@ -377,6 +378,27 @@ func (h *Handler) handleUserTrial(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type sendMessageRequest struct {
+	Text string `json:"text"`
+}
+
+func (h *Handler) handleUserSendMessage(w http.ResponseWriter, r *http.Request) {
+	targetID, ok := pathInt64(w, r, "id")
+	if !ok {
+		return
+	}
+	var req sendMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := h.ops.SendMessage(r.Context(), targetID, req.Text, "webapi"); err != nil {
+		writeOpsError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // writeOpsError maps adminops sentinel errors to the appropriate HTTP status; anything
 // unrecognized is a 500 (already audit-logged by adminops itself regardless of outcome).
 func writeOpsError(w http.ResponseWriter, err error) {
@@ -387,6 +409,8 @@ func writeOpsError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, adminops.ErrFixStrategyInProgress):
 		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, adminops.ErrEmptyMessage):
+		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}

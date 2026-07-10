@@ -5,6 +5,7 @@ import { GlassCard } from "../components/GlassCard";
 import { StatTile } from "../components/StatTile";
 import { ChartLine } from "../components/ChartLine";
 import { ChartBar } from "../components/ChartBar";
+import { ActivityFeed } from "../components/ActivityFeed";
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -70,6 +71,7 @@ export function Dashboard() {
           <StatTile label="Конверсия" value={`${referrals.conversionPercent.toFixed(0)}%`} />
         </div>
       </GlassCard>
+      <ActivityFeed />
     </div>
   );
 }

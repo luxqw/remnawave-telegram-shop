@@ -81,6 +81,7 @@ func main() {
 	topupRepository := database.NewTrafficTopupRepository(pool)
 	auditLogRepository := database.NewAdminAuditLogRepository(pool)
 	webhookInboxRepository := database.NewWebhookInboxRepository(pool)
+	activityRepository := database.NewActivityRepository(pool)
 
 	cryptoPayClient := cryptopay.NewCryptoPayClient(config.CryptoPayUrl(), config.CryptoPayToken())
 	remnawaveClient := remnawave.NewClient(config.RemnawaveUrl(), config.RemnawaveToken(), config.RemnawaveMode())
@@ -138,12 +139,12 @@ func main() {
 	// nil when Tribute webhooks aren't configured, and every consumer treats that as optional.
 	var tributeClient *tribute.Client
 	if config.GetTributeWebHookUrl() != "" {
-		tributeClient = tribute.NewClient(paymentService, customerRepository, topupRepository, webhookInboxRepository, remnawaveClient, b)
+		tributeClient = tribute.NewClient(paymentService, customerRepository, topupRepository, webhookInboxRepository, remnawaveClient, b, tm)
 	}
 
-	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, remnawaveClient, syncService, b)
+	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, remnawaveClient, syncService, b, tm)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository, auditLogRepository, opsService)
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
@@ -180,67 +181,7 @@ func main() {
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypePrefix, h.StartCommandHandler, h.SuspiciousUserFilterMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/sync", bot.MatchTypeExact, h.SyncUsersCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/fix_traffic_strategy", bot.MatchTypePrefix, h.FixTrafficStrategyCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_user", bot.MatchTypePrefix, h.AdminUserCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_topup_enroll", bot.MatchTypePrefix, h.AdminTopupEnrollCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_topup", bot.MatchTypePrefix, h.AdminTopupCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_reset_devices", bot.MatchTypePrefix, h.AdminResetDevicesCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_broadcast", bot.MatchTypeExact, h.AdminBroadcastCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/cancel", bot.MatchTypeExact, h.AdminCancelCommandHandler, isAdminMiddleware)
-	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-		if update.Message == nil || update.Message.From == nil {
-			return false
-		}
-		if update.Message.From.ID != config.GetAdminTelegramId() {
-			return false
-		}
-		if strings.HasPrefix(update.Message.Text, "/") {
-			return false
-		}
-		return h.IsBroadcastTextPending(update.Message.Chat.ID)
-	}, h.AdminBroadcastTextHandler)
-	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-		if update.Message == nil || update.Message.From == nil {
-			return false
-		}
-		if update.Message.From.ID != config.GetAdminTelegramId() {
-			return false
-		}
-		if strings.HasPrefix(update.Message.Text, "/") {
-			return false
-		}
-		return h.IsAdminSessionActive(update.Message.Chat.ID)
-	}, h.AdminPanelTextHandler)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirm, bot.MatchTypeExact, h.AdminBroadcastConfirmCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmExpired, bot.MatchTypeExact, h.AdminBroadcastConfirmExpiredCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmInactive, bot.MatchTypeExact, h.AdminBroadcastConfirmInactiveCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmNew, bot.MatchTypeExact, h.AdminBroadcastConfirmNewCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastConfirmAll, bot.MatchTypeExact, h.AdminBroadcastConfirmAllCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastTest, bot.MatchTypeExact, h.AdminBroadcastTestCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackBroadcastCancel, bot.MatchTypeExact, h.AdminBroadcastCancelCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelMenu, bot.MatchTypeExact, h.AdminPanelMenuCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelStats, bot.MatchTypeExact, h.AdminPanelStatsCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelBcast, bot.MatchTypeExact, h.AdminPanelBcastCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelSystem, bot.MatchTypeExact, h.AdminPanelSystemCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelSync, bot.MatchTypeExact, h.AdminPanelSyncCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminPanelUsers, bot.MatchTypeExact, h.AdminPanelUsersCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserTopup, bot.MatchTypePrefix, h.AdminUserTopupCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserExtend, bot.MatchTypePrefix, h.AdminUserExtendCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserEnable, bot.MatchTypePrefix, h.AdminUserEnableCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserDisable, bot.MatchTypePrefix, h.AdminUserDisableCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserResetDevices, bot.MatchTypePrefix, h.AdminUserResetDevicesCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminUserResetTraffic, bot.MatchTypePrefix, h.AdminUserResetTrafficCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminActionConfirm, bot.MatchTypeExact, h.AdminActionConfirmCallback, h.AnswerCallbackQueryMiddleware)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackAdminActionCancel, bot.MatchTypeExact, h.AdminActionCancelCallback, h.AnswerCallbackQueryMiddleware)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin", bot.MatchTypeExact, h.AdminMenuCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_set_trial", bot.MatchTypePrefix, h.AdminSetTrialCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_extend", bot.MatchTypePrefix, h.AdminExtendCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_disable", bot.MatchTypePrefix, h.AdminDisableCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_enable", bot.MatchTypePrefix, h.AdminEnableCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_reset_traffic", bot.MatchTypePrefix, h.AdminResetTrafficCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_stats", bot.MatchTypeExact, h.AdminStatsCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_audit", bot.MatchTypePrefix, h.AdminAuditCommandHandler, isAdminMiddleware)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/admin_referrals", bot.MatchTypeExact, h.AdminReferralsCommandHandler, isAdminMiddleware)
 
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackReferral, bot.MatchTypeExact, h.ReferralCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackReferralList, bot.MatchTypePrefix, h.ReferralListCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
@@ -279,7 +220,7 @@ func main() {
 	if config.IsAdminWebAppEnabled() {
 		webappHandler := webapp.NewHandler(
 			customerRepository, purchaseRepository, referralRepository, auditLogRepository,
-			webhookInboxRepository, remnawaveClient, tributeClient, opsService, pool,
+			webhookInboxRepository, activityRepository, remnawaveClient, tributeClient, opsService, pool,
 			webapp.BuildInfo{Version: Version, Commit: Commit, BuildDate: BuildDate},
 		)
 		mux.Handle("/admin/", webappHandler)
@@ -357,34 +298,31 @@ func isAdminMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
 	}
 }
 
-// registerAdminCommands publishes the full /admin_* command list to Telegram's native "/" menu,
-// scoped to the admin's own chat only (regular customers never see these). Without this, typing
-// "/" only autocompletes whatever the admin happens to remember — Telegram never learns about
-// commands that were only ever registered as message handlers.
+// registerAdminCommands publishes the admin's native "/" command menu, scoped to the admin's own
+// chat only (regular customers never see these). Almost everything that used to be a /admin_*
+// command now lives in the web app opened via /admin; /sync remains as the one bot-native backup
+// action that still makes sense to trigger without opening the panel.
+//
+// DeleteMyCommands is called first and is required, not decorative: Telegram caches the
+// previously-registered command list client-side, and SetMyCommands alone does not clear entries
+// that are no longer present in the new list — this is a documented limitation of the Bot API
+// scoping model, not a bug in this implementation. Without the delete, admins who used the bot
+// before this change would keep seeing the old ~16-command menu indefinitely.
 func registerAdminCommands(ctx context.Context, b *bot.Bot) {
+	scope := &models.BotCommandScopeChat{ChatID: config.GetAdminTelegramId()}
+
+	if ok, err := b.DeleteMyCommands(ctx, &bot.DeleteMyCommandsParams{Scope: scope}); err != nil || !ok {
+		slog.Warn("failed to clear stale admin command list", "error", err)
+	}
+
 	commands := []models.BotCommand{
 		{Command: "admin", Description: "Открыть панель администратора"},
-		{Command: "admin_user", Description: "Карточка пользователя: /admin_user <id>"},
-		{Command: "admin_stats", Description: "Статистика бота"},
-		{Command: "admin_referrals", Description: "Обзор реферальной программы"},
-		{Command: "admin_audit", Description: "Аудит действий: /admin_audit <id>"},
-		{Command: "admin_extend", Description: "Продлить подписку: /admin_extend <id> <days>"},
-		{Command: "admin_disable", Description: "Отключить пользователя: /admin_disable <id>"},
-		{Command: "admin_enable", Description: "Включить пользователя: /admin_enable <id>"},
-		{Command: "admin_reset_traffic", Description: "Сбросить трафик: /admin_reset_traffic <id>"},
-		{Command: "admin_reset_devices", Description: "Сбросить устройства: /admin_reset_devices <id>"},
-		{Command: "admin_topup", Description: "Начислить/списать ГБ: /admin_topup <id> <gb>"},
-		{Command: "admin_topup_enroll", Description: "Зачислить существующий топап в систему"},
-		{Command: "admin_set_trial", Description: "Триал-статус: /admin_set_trial <id> on|off"},
-		{Command: "admin_broadcast", Description: "Рассылка сообщения аудитории"},
 		{Command: "sync", Description: "Синхронизация пользователей с Remnawave"},
-		{Command: "fix_traffic_strategy", Description: "Аудит/фикс стратегии сброса трафика"},
-		{Command: "cancel", Description: "Отменить текущий диалог"},
 	}
 
 	ok, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
 		Commands: commands,
-		Scope:    &models.BotCommandScopeChat{ChatID: config.GetAdminTelegramId()},
+		Scope:    scope,
 	})
 	if err != nil || !ok {
 		slog.Error("failed to register admin command list", "error", err)

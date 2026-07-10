@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/google/uuid"
 
+	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
 )
 
@@ -146,6 +147,26 @@ func (s *Service) deliverBroadcast(ctx context.Context, jobID, text, segment str
 	failed := unreachable + otherFailed
 	slog.Info("adminops broadcast: done", "segment", segment, "sent", sent, "failed", failed, "unreachable", unreachable, "other", otherFailed)
 	s.audit(ctx, "broadcast_"+segment, 0, intPtr(sent), nil, source)
+}
+
+// SendTestBroadcast sends the draft broadcast text only to the configured admin telegram ID, so
+// the admin can preview formatting/content before committing to a real send. Synchronous (no job
+// tracking needed for a single recipient) and always audit-logged, matching every other adminops
+// mutation. Preserves the bot's old "🧪 Только мне" test-send capability, which had no equivalent
+// in the web panel until now.
+func (s *Service) SendTestBroadcast(ctx context.Context, text, source string) error {
+	if text == "" {
+		return fmt.Errorf("broadcast text is required")
+	}
+	adminID := config.GetAdminTelegramId()
+	var sendErr error
+	if s.telegramBot != nil {
+		_, sendErr = s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: adminID, Text: text, ParseMode: models.ParseModeHTML,
+		})
+	}
+	s.audit(ctx, "broadcast_test", adminID, nil, sendErr, source)
+	return sendErr
 }
 
 // BroadcastStatus returns the latest known progress for a broadcast job. ok is false when the job

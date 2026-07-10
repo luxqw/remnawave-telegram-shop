@@ -7,6 +7,7 @@ import { ConfirmModal } from "../components/ConfirmModal";
 import { DataTable, type Column } from "../components/DataTable";
 import { useToast } from "../components/Toast";
 import { navigate } from "../router";
+import { useTelegramBackButton } from "../auth/telegram";
 
 type PendingAction =
   | { kind: "status"; status: "ACTIVE" | "DISABLED" }
@@ -14,7 +15,8 @@ type PendingAction =
   | { kind: "reset-traffic" }
   | { kind: "topup"; gb: number; previewLimitGb: number | null }
   | { kind: "extend"; days: number }
-  | { kind: "trial"; isTrial: boolean };
+  | { kind: "trial"; isTrial: boolean }
+  | { kind: "message"; text: string };
 
 export function UserDetail(props: { id: number }) {
   const toast = useToast();
@@ -26,6 +28,7 @@ export function UserDetail(props: { id: number }) {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [gbInput, setGbInput] = useState("10");
   const [daysInput, setDaysInput] = useState("30");
+  const [messageInput, setMessageInput] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
 
   const load = () => {
@@ -41,6 +44,8 @@ export function UserDetail(props: { id: number }) {
   }, [tab, props.id, reloadTick]);
 
   const refreshAll = () => setReloadTick((t) => t + 1);
+
+  useTelegramBackButton(() => navigate("users"), true);
 
   const openTopupConfirm = async () => {
     const gb = parseInt(gbInput, 10);
@@ -84,6 +89,11 @@ export function UserDetail(props: { id: number }) {
           await api.post(`/admin/api/users/${props.id}/trial`, { isTrial: pending.isTrial });
           toast.push("Статус триала изменён");
           break;
+        case "message":
+          await api.post(`/admin/api/users/${props.id}/message`, { text: pending.text });
+          toast.push("Сообщение отправлено");
+          setMessageInput("");
+          break;
       }
       setPending(null);
       refreshAll();
@@ -109,7 +119,14 @@ export function UserDetail(props: { id: number }) {
     { header: "Действие", render: (e) => e.action },
     { header: "Исход", render: (e) => <Badge variant={e.outcome === "success" ? "success" : "danger"}>{e.outcome}</Badge> },
     { header: "Источник", render: (e) => e.source },
-    { header: "Параметр", render: (e) => (e.paramInt !== null ? <span class="mono">{e.paramInt}</span> : "—") },
+    {
+      header: "Параметр",
+      render: (e) => {
+        if (e.paramInt !== null) return <span class="mono">{e.paramInt}</span>;
+        if (e.paramText) return <span title={e.paramText}>{e.paramText.length > 40 ? `${e.paramText.slice(0, 40)}…` : e.paramText}</span>;
+        return "—";
+      },
+    },
   ];
 
   const referralColumns: Column<Referral>[] = [
@@ -178,7 +195,7 @@ export function UserDetail(props: { id: number }) {
               <div class="field">
                 <label class="field-label">Топап ГБ (может быть отрицательным)</label>
                 <div class="row">
-                  <input class="input" style={{ width: 90 }} value={gbInput} onInput={(e) => setGbInput((e.target as HTMLInputElement).value)} />
+                  <input class="input input-compact" value={gbInput} onInput={(e) => setGbInput((e.target as HTMLInputElement).value)} />
                   <button class="btn btn-sm" onClick={openTopupConfirm}>Применить</button>
                 </div>
               </div>
@@ -186,7 +203,7 @@ export function UserDetail(props: { id: number }) {
               <div class="field">
                 <label class="field-label">Продлить на дней</label>
                 <div class="row">
-                  <input class="input" style={{ width: 90 }} value={daysInput} onInput={(e) => setDaysInput((e.target as HTMLInputElement).value)} />
+                  <input class="input input-compact" value={daysInput} onInput={(e) => setDaysInput((e.target as HTMLInputElement).value)} />
                   <button
                     class="btn btn-sm"
                     onClick={() => {
@@ -205,6 +222,26 @@ export function UserDetail(props: { id: number }) {
               >
                 {customer.isTrial ? "Снять триал" : "Сделать триал"}
               </button>
+
+              <div class="field">
+                <label class="field-label">Сообщение пользователю</label>
+                <textarea
+                  class="input"
+                  rows={3}
+                  value={messageInput}
+                  onInput={(e) => setMessageInput((e.target as HTMLTextAreaElement).value)}
+                  placeholder="Текст сообщения…"
+                />
+                <button
+                  class="btn btn-sm"
+                  onClick={() => {
+                    if (messageInput.trim()) setPending({ kind: "message", text: messageInput.trim() });
+                    else toast.push("Введите текст сообщения", "error");
+                  }}
+                >
+                  Отправить сообщение
+                </button>
+              </div>
             </div>
           </GlassCard>
         </div>
@@ -237,6 +274,8 @@ function confirmTitle(pending: PendingAction | null): string {
       return "Продлить подписку?";
     case "trial":
       return pending.isTrial ? "Сделать пользователя триальным?" : "Снять триальный статус?";
+    case "message":
+      return "Отправить сообщение пользователю?";
   }
 }
 
@@ -247,6 +286,8 @@ function confirmBody(pending: PendingAction | null) {
       return `${pending.gb > 0 ? "+" : ""}${pending.gb} GB. Новый лимит: ${pending.previewLimitGb ?? "?"} GB.`;
     case "extend":
       return `Подписка будет продлена на ${pending.days} дн.`;
+    case "message":
+      return `Текст: «${pending.text}»`;
     default:
       return "Действие будет немедленно применено и записано в аудит-лог.";
   }

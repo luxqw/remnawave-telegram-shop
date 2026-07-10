@@ -81,6 +81,9 @@ select:focus-visible,
 
 .page-content {
   padding: 28px clamp(20px, 3vw, 40px);
+  padding-left: max(clamp(20px, 3vw, 40px), env(safe-area-inset-left));
+  padding-right: max(clamp(20px, 3vw, 40px), env(safe-area-inset-right));
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
   flex: 1;
 }
 

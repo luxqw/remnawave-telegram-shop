@@ -51,6 +51,7 @@ export interface AuditLogEntry {
   action: string;
   targetTelegramId: number;
   paramInt: number | null;
+  paramText: string | null;
   outcome: string;
   errorMessage: string | null;
   source: string;
@@ -92,6 +93,14 @@ export interface DashboardReferrals {
   total: number;
   granted: number;
   conversionPercent: number;
+}
+
+export interface ActivityEvent {
+  type: "signup" | "purchase" | "referral_bonus" | "admin_action";
+  timestamp: string;
+  actorId: number | null;
+  targetId: number;
+  detail: string;
 }
 
 export interface DashboardHealth {
