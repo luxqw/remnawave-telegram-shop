@@ -79,7 +79,7 @@
   border: 1px solid var(--surface-glass-border);
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
-  padding: 8px;
+  padding: 12px;
   cursor: pointer;
 }
 
@@ -89,6 +89,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 clamp(20px, 3vw, 40px);
+  padding-top: max(0px, env(safe-area-inset-top));
+  height: calc(var(--topbar-height) + env(safe-area-inset-top));
   border-bottom: 1px solid var(--surface-glass-border);
   background: rgba(8, 8, 10, 0.6);
   backdrop-filter: blur(var(--blur-card));
@@ -96,6 +98,32 @@
   position: sticky;
   top: 0;
   z-index: 10;
+}
+
+/* Off-canvas drawer trigger — hidden on desktop, shown below the 720px phone cutoff (see the
+   drawer media query further down). */
+.hamburger-btn {
+  display: none;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--surface-glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 49;
+  animation: fade-in var(--duration-normal) var(--ease-out-expo);
 }
 
 .identity-chip {
@@ -254,7 +282,8 @@
 }
 
 .btn-sm {
-  padding: 6px 12px;
+  padding: 10px 16px;
+  min-height: 44px;
   font-size: 12px;
 }
 
@@ -288,6 +317,11 @@
 
 .input::placeholder {
   color: var(--text-tertiary);
+}
+
+.input-compact {
+  width: 100%;
+  max-width: 140px;
 }
 
 /* --- Table --- */
@@ -336,6 +370,52 @@
   font-family: var(--font-mono);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Mobile card-list fallback for DataTable — hidden on desktop, shown below 720px (see the drawer
+   media query further down) in place of the horizontally-scrolling table. */
+.data-card-list {
+  display: none;
+}
+
+.data-card {
+  background: var(--surface-glass);
+  border: 1px solid var(--surface-glass-border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-expo);
+}
+
+.data-card:hover {
+  background: var(--surface-glass-hover);
+}
+
+.data-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.data-card-row + .data-card-row {
+  border-top: 1px solid var(--surface-glass-border);
+}
+
+.data-card-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.data-card-value {
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* --- Badge --- */
@@ -441,8 +521,8 @@
 
 .toast-stack {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  right: calc(20px + env(safe-area-inset-right));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -535,6 +615,67 @@
 
 .chart-bar {
   fill: var(--surface-glass-hover);
+}
+
+/* --- Phone breakpoint: sidebar becomes an off-canvas drawer, tables become cards --- */
+
+@media (max-width: 719px) {
+  .hamburger-btn {
+    display: flex;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: min(84vw, 300px);
+    padding-left: max(12px, env(safe-area-inset-left));
+    transform: translateX(-100%);
+    transition: transform var(--duration-normal) var(--ease-out-expo);
+    z-index: 50;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* The desktop icon-only collapse toggle doesn't make sense in a full-height drawer that's
+     either fully open or fully hidden. */
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .data-table-wrap {
+    display: none;
+  }
+
+  .data-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .page-content {
+    padding: 16px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 479px) {
+  .modal {
+    padding: 18px;
+  }
+
+  .page-content {
+    padding: 12px;
+  }
+
+  .stat-tile-value {
+    font-size: 22px;
+  }
 }
 
 .chart-axis-label {

@@ -1,11 +1,11 @@
-﻿package notification
+package notification
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"math"
+	"strings"
 	"time"
 
 	"remnawave-tg-shop-bot/internal/database"

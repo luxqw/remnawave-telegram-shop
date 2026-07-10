@@ -34,6 +34,7 @@ type Handler struct {
 	referralRepository     *database.ReferralRepository
 	auditLogRepository     *database.AdminAuditLogRepository
 	webhookInboxRepository *database.WebhookInboxRepository
+	activityRepository     *database.ActivityRepository
 	remnawaveClient        *remnawave.Client
 	tributeClient          *tribute.Client // nil when Tribute webhooks are disabled
 	ops                    *adminops.Service
@@ -58,6 +59,7 @@ func NewHandler(
 	referralRepository *database.ReferralRepository,
 	auditLogRepository *database.AdminAuditLogRepository,
 	webhookInboxRepository *database.WebhookInboxRepository,
+	activityRepository *database.ActivityRepository,
 	remnawaveClient *remnawave.Client,
 	tributeClient *tribute.Client,
 	ops *adminops.Service,
@@ -70,6 +72,7 @@ func NewHandler(
 		referralRepository:     referralRepository,
 		auditLogRepository:     auditLogRepository,
 		webhookInboxRepository: webhookInboxRepository,
+		activityRepository:     activityRepository,
 		remnawaveClient:        remnawaveClient,
 		tributeClient:          tributeClient,
 		ops:                    ops,
@@ -99,6 +102,7 @@ func (h *Handler) routes() http.Handler {
 	mux.HandleFunc("GET /admin/api/dashboard/growth", h.requireAdminSession(h.handleDashboardGrowth))
 	mux.HandleFunc("GET /admin/api/dashboard/referrals", h.requireAdminSession(h.handleDashboardReferrals))
 	mux.HandleFunc("GET /admin/api/dashboard/health", h.requireAdminSession(h.handleDashboardHealth))
+	mux.HandleFunc("GET /admin/api/dashboard/activity", h.requireAdminSession(h.handleDashboardActivity))
 
 	// Users
 	mux.HandleFunc("GET /admin/api/users", h.requireAdminSession(h.handleUsersList))
@@ -114,10 +118,12 @@ func (h *Handler) routes() http.Handler {
 	mux.HandleFunc("POST /admin/api/users/{id}/status", h.requireAdminSession(h.handleUserStatus))
 	mux.HandleFunc("POST /admin/api/users/{id}/extend", h.requireAdminSession(h.handleUserExtend))
 	mux.HandleFunc("POST /admin/api/users/{id}/trial", h.requireAdminSession(h.handleUserTrial))
+	mux.HandleFunc("POST /admin/api/users/{id}/message", h.requireAdminSession(h.handleUserSendMessage))
 
 	// Broadcast
 	mux.HandleFunc("POST /admin/api/broadcast/preview", h.requireAdminSession(h.handleBroadcastPreview))
 	mux.HandleFunc("POST /admin/api/broadcast/send", h.requireAdminSession(h.handleBroadcastSend))
+	mux.HandleFunc("POST /admin/api/broadcast/test", h.requireAdminSession(h.handleBroadcastTest))
 	mux.HandleFunc("GET /admin/api/broadcast/status/{jobId}", h.requireAdminSession(h.handleBroadcastStatus))
 
 	// Referrals

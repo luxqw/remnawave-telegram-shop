@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -19,6 +20,7 @@ import (
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/remnawave"
 	syncsvc "remnawave-tg-shop-bot/internal/sync"
+	"remnawave-tg-shop-bot/internal/translation"
 )
 
 var (
@@ -31,6 +33,8 @@ var (
 	// ErrNegativeLimit is returned when a traffic top-up/deduction would push the Remnawave
 	// traffic limit below zero.
 	ErrNegativeLimit = errors.New("resulting traffic limit would be negative")
+	// ErrEmptyMessage is returned by SendMessage when the admin-authored text is blank.
+	ErrEmptyMessage = errors.New("message text is empty")
 )
 
 // Service implements every admin mutating action once, callable from both the Telegram bot
@@ -47,6 +51,7 @@ type Service struct {
 	remnawaveClient        *remnawave.Client
 	syncService            *syncsvc.SyncService
 	telegramBot            *bot.Bot
+	translation            *translation.Manager
 }
 
 func NewService(
@@ -59,6 +64,7 @@ func NewService(
 	remnawaveClient *remnawave.Client,
 	syncService *syncsvc.SyncService,
 	telegramBot *bot.Bot,
+	translationManager *translation.Manager,
 ) *Service {
 	return &Service{
 		customerRepository:     customerRepository,
@@ -70,6 +76,7 @@ func NewService(
 		remnawaveClient:        remnawaveClient,
 		syncService:            syncService,
 		telegramBot:            telegramBot,
+		translation:            translationManager,
 	}
 }
 
@@ -97,18 +104,31 @@ func (s *Service) audit(ctx context.Context, action string, targetID int64, para
 	}
 }
 
-func intPtr(v int) *int { return &v }
-
-func pluralDays(n int) string {
-	switch {
-	case n%10 == 1 && n%100 != 11:
-		return "день"
-	case n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20):
-		return "дня"
-	default:
-		return "дней"
+// auditText mirrors audit but records a free-text parameter (e.g. the body of an admin-authored
+// message) instead of a numeric one — kept as a separate helper so audit's ParamInt-only callers
+// don't need to change shape.
+func (s *Service) auditText(ctx context.Context, action string, targetID int64, param *string, actionErr error, source string) {
+	outcome := "success"
+	var errMsg *string
+	if actionErr != nil {
+		outcome = "failure"
+		m := actionErr.Error()
+		errMsg = &m
+	}
+	if _, err := s.auditLogRepository.Create(ctx, &database.AdminAuditLog{
+		AdminTelegramID:  config.GetAdminTelegramId(),
+		Action:           action,
+		TargetTelegramID: targetID,
+		ParamText:        param,
+		Outcome:          outcome,
+		ErrorMessage:     errMsg,
+		Source:           source,
+	}); err != nil {
+		slog.Error("adminops: write audit log", "action", action, "target", targetID, "error", err)
 	}
 }
+
+func intPtr(v int) *int { return &v }
 
 // notify sends an HTML message to a Telegram chat, best-effort. Every call site logs and swallows
 // the error, matching existing bot behavior where a notification failure never blocks the action.
@@ -119,6 +139,34 @@ func (s *Service) notify(ctx context.Context, chatID int64, text string) {
 	if _, err := s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, ParseMode: models.ParseModeHTML, Text: text}); err != nil {
 		slog.Error("adminops: notify failed", "chat_id", chatID, "error", err)
 	}
+}
+
+// customerLanguage resolves the target customer's preferred language for translation lookups.
+// Returns "" (not an error) when the customer can't be found — translation.Manager.GetText falls
+// back to the default language for an unknown/empty langCode, so callers never need to branch on
+// this failing.
+func (s *Service) customerLanguage(ctx context.Context, targetID int64) string {
+	customer, err := s.customerRepository.FindByTelegramId(ctx, targetID)
+	if err != nil || customer == nil {
+		return ""
+	}
+	return customer.Language
+}
+
+// notifyKey resolves the target customer's language, looks up text by translation key, formats it
+// with args when provided, and sends it via notify. This is the one path every adminops
+// notification should go through instead of hardcoding Russian strings, so wording lives in
+// translations/*.json (and is available in every supported language) rather than in Go source.
+func (s *Service) notifyKey(ctx context.Context, targetID int64, key string, args ...any) {
+	if s.translation == nil {
+		return
+	}
+	lang := s.customerLanguage(ctx, targetID)
+	text := s.translation.GetText(lang, key)
+	if len(args) > 0 {
+		text = fmt.Sprintf(text, args...)
+	}
+	s.notify(ctx, targetID, text)
 }
 
 // SetStatusResult carries the outcome of SetStatus for API/UI display.
@@ -141,9 +189,9 @@ func (s *Service) SetStatus(ctx context.Context, targetID int64, status, source 
 	}
 
 	if status == "ACTIVE" {
-		s.notify(ctx, targetID, "<b>Доступ восстановлен!</b>\n\nВаш VPN снова активен. Приятного пользования!")
+		s.notifyKey(ctx, targetID, "admin_status_active")
 	} else {
-		s.notify(ctx, targetID, "<b>Доступ приостановлен.</b>\n\nВаш VPN временно отключён. Если это ошибка — обратитесь в поддержку.")
+		s.notifyKey(ctx, targetID, "admin_status_disabled")
 	}
 	slog.Info("adminops: set user status", "telegram_id", targetID, "status", status, "source", source)
 	s.audit(ctx, "set_status_"+status, targetID, nil, nil, source)
@@ -151,7 +199,8 @@ func (s *Service) SetStatus(ctx context.Context, targetID int64, status, source 
 }
 
 // ResetDevices clears all HWID devices for a user in Remnawave. Mirrors the bot's
-// execResetDevices exactly, plus unconditional audit logging.
+// execResetDevices exactly, plus unconditional audit logging and (new) a customer notification —
+// this action used to happen silently from the customer's point of view.
 func (s *Service) ResetDevices(ctx context.Context, targetID int64, source string) error {
 	rwUsers, err := s.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
 	if err != nil || len(rwUsers) == 0 {
@@ -163,6 +212,7 @@ func (s *Service) ResetDevices(ctx context.Context, targetID int64, source strin
 		s.audit(ctx, "reset_devices", targetID, nil, err, source)
 		return err
 	}
+	s.notifyKey(ctx, targetID, "admin_devices_reset")
 	slog.Info("adminops: reset devices", "telegram_id", targetID, "source", source)
 	s.audit(ctx, "reset_devices", targetID, nil, nil, source)
 	return nil
@@ -187,7 +237,7 @@ func (s *Service) ResetTraffic(ctx context.Context, targetID int64, source strin
 		return ResetTrafficResult{}, err
 	}
 	limitGB := int64(rwUsers[0].TrafficLimitBytes) / int64(config.BytesInGigabyte())
-	s.notify(ctx, targetID, "<b>Трафик сброшен!</b>\n\nВаш счётчик трафика сброшен администратором. Снова доступен полный объём.")
+	s.notifyKey(ctx, targetID, "admin_traffic_reset")
 	slog.Info("adminops: reset traffic", "telegram_id", targetID, "source", source)
 	s.audit(ctx, "reset_traffic", targetID, nil, nil, source)
 	return ResetTrafficResult{NewLimitGB: limitGB}, nil
@@ -251,9 +301,15 @@ func (s *Service) Topup(ctx context.Context, targetID int64, gb int, source stri
 		slog.Error("adminops topup: create DB record", "telegram_id", targetID, "error", dbErr)
 		dbCreated = false
 	}
-	slog.Info("adminops: topup applied", "telegram_id", targetID, "gb", gb, "new_limit_gb", newLimit/int64(config.BytesInGigabyte()), "source", source)
+	newLimitGB := newLimit / int64(config.BytesInGigabyte())
+	if gb > 0 {
+		s.notifyKey(ctx, targetID, "admin_topup_increase", gb, newLimitGB)
+	} else {
+		s.notifyKey(ctx, targetID, "admin_topup_decrease", -gb, newLimitGB)
+	}
+	slog.Info("adminops: topup applied", "telegram_id", targetID, "gb", gb, "new_limit_gb", newLimitGB, "source", source)
 	s.audit(ctx, "topup", targetID, intPtr(gb), nil, source)
-	return TopupResult{NewLimitGB: newLimit / int64(config.BytesInGigabyte()), DBRecordCreated: dbCreated}, nil
+	return TopupResult{NewLimitGB: newLimitGB, DBRecordCreated: dbCreated}, nil
 }
 
 // TopupEnrollResult carries the outcome of TopupEnroll for API/UI display: exactly one of
@@ -271,6 +327,10 @@ type TopupEnrollResult struct {
 // TopupEnroll registers an existing (out-of-band) Remnawave traffic limit into the topup system
 // so future Topup/rollover logic accounts for it correctly. Mirrors
 // AdminTopupEnrollCommandHandler exactly, plus unconditional audit logging.
+//
+// Intentionally does not notify the customer: this is an internal bookkeeping reconciliation
+// (registering a limit that already exists in Remnawave into our topup ledger) — the customer's
+// actual traffic limit doesn't change, so there's nothing user-visible to report.
 func (s *Service) TopupEnroll(ctx context.Context, targetID int64, source string) (TopupEnrollResult, error) {
 	rwUsers, err := s.remnawaveClient.GetUsersByTelegramID(ctx, targetID)
 	if err != nil || len(rwUsers) == 0 {
@@ -372,8 +432,7 @@ func (s *Service) Extend(ctx context.Context, targetID int64, days int, source s
 		slog.Error("adminops extend: update customer DB", "error", err)
 		dbUpdated = false
 	}
-	s.notify(ctx, targetID, fmt.Sprintf("<b>Хорошие новости! Ваша подписка продлена на %d %s.</b>\n\nАктивна до: %s",
-		days, pluralDays(days), newUser.ExpireAt.Format("02.01.2006")))
+	s.notifyKey(ctx, targetID, "admin_subscription_extended", days, newUser.ExpireAt.Format("02.01.2006"))
 	slog.Info("adminops: extend", "telegram_id", targetID, "days", days, "source", source)
 	s.audit(ctx, "extend", targetID, intPtr(days), nil, source)
 	return ExtendResult{ExpireAt: newUser.ExpireAt, DBUpdated: dbUpdated}, nil
@@ -401,6 +460,11 @@ func (s *Service) SetTrial(ctx context.Context, targetID int64, isTrial bool, so
 		s.audit(ctx, "set_trial", targetID, &param, err, source)
 		return err
 	}
+	if isTrial {
+		s.notifyKey(ctx, targetID, "admin_trial_enabled")
+	} else {
+		s.notifyKey(ctx, targetID, "admin_trial_disabled")
+	}
 	slog.Info("adminops: set_trial", "telegram_id", targetID, "is_trial", isTrial, "source", source)
 	s.audit(ctx, "set_trial", targetID, &param, nil, source)
 	return nil
@@ -412,4 +476,37 @@ func (s *Service) SetTrial(ctx context.Context, targetID int64, isTrial bool, so
 func (s *Service) RunSync(ctx context.Context, source string) {
 	s.syncService.Sync()
 	s.audit(ctx, "sync", 0, nil, nil, source)
+}
+
+// SendMessage delivers a one-way, admin-authored message to a customer's Telegram DM, wrapped in
+// the admin_message_prefix template (localized to the customer's language). Unlike every other
+// mutation here, it doesn't touch Remnawave at all — same reasoning as broadcast delivery — so
+// there's no live-state re-fetch step. Always audit-logs (success and failure), preserving the
+// sent text in ParamText so admins can review what was actually said.
+func (s *Service) SendMessage(ctx context.Context, targetID int64, text, source string) error {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		s.auditText(ctx, "send_message", targetID, nil, ErrEmptyMessage, source)
+		return ErrEmptyMessage
+	}
+
+	if s.telegramBot == nil {
+		err := errors.New("telegram bot not configured")
+		s.auditText(ctx, "send_message", targetID, &trimmed, err, source)
+		return err
+	}
+
+	wrapped := trimmed
+	if s.translation != nil {
+		wrapped = fmt.Sprintf(s.translation.GetText(s.customerLanguage(ctx, targetID), "admin_message_prefix"), trimmed)
+	}
+
+	_, err := s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: targetID, ParseMode: models.ParseModeHTML, Text: wrapped,
+	})
+	s.auditText(ctx, "send_message", targetID, &trimmed, err, source)
+	if err != nil {
+		return fmt.Errorf("send message: %w", err)
+	}
+	return nil
 }

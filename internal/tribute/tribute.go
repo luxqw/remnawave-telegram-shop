@@ -17,6 +17,7 @@ import (
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/payment"
 	"remnawave-tg-shop-bot/internal/remnawave"
+	"remnawave-tg-shop-bot/internal/translation"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ type Client struct {
 	webhookInbox       *database.WebhookInboxRepository
 	remnawaveClient    *remnawave.Client
 	telegramBot        *bot.Bot
+	translation        *translation.Manager
 }
 
 const (
@@ -48,6 +50,7 @@ func NewClient(
 	webhookInbox *database.WebhookInboxRepository,
 	remnawaveClient *remnawave.Client,
 	telegramBot *bot.Bot,
+	translationManager *translation.Manager,
 ) *Client {
 	return &Client{
 		paymentService:     paymentService,
@@ -56,6 +59,7 @@ func NewClient(
 		webhookInbox:       webhookInbox,
 		remnawaveClient:    remnawaveClient,
 		telegramBot:        telegramBot,
+		translation:        translationManager,
 	}
 }
 
@@ -225,7 +229,7 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 		return fmt.Errorf("topup: get remnawave user: %w", err)
 	}
 	if len(rwUsers) == 0 {
-		c.notifyUser(ctx, telegramID, "❌ Ошибка зачисления трафика: аккаунт не найден в панели. Обратитесь в поддержку.")
+		c.notifyUserKey(ctx, telegramID, "tribute_topup_user_not_found")
 		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: Remnawave user not found for telegram_id=%d, pkg=%dGB", telegramID, gbAmount))
 		return fmt.Errorf("topup: remnawave user not found for telegram_id %d", telegramID)
 	}
@@ -237,7 +241,7 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 
 	if rwUser.TrafficLimitBytes == 0 {
 		slog.Warn("topup: user has unlimited traffic, skipping", "telegram_id", telegramID)
-		c.notifyUser(ctx, telegramID, "ℹ️ У тебя безлимитный тариф — дополнительный трафик не нужен. Обратись в поддержку для возврата.")
+		c.notifyUserKey(ctx, telegramID, "tribute_topup_unlimited")
 		payID := tributePaymentID
 		_, _ = c.topupRepository.Create(ctx, &database.TrafficTopup{
 			TelegramID: telegramID, RemnawaveUUID: rwUser.UUID.String(), GBAmount: gbAmount,
@@ -250,7 +254,7 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 	status := strings.ToUpper(rwUser.Status)
 	if status != "ACTIVE" && status != "LIMITED" {
 		slog.Warn("topup: user not eligible in Remnawave", "telegram_id", telegramID, "status", rwUser.Status)
-		c.notifyUser(ctx, telegramID, "❌ Ошибка зачисления трафика: аккаунт не активен. Обратись в поддержку.")
+		c.notifyUserKey(ctx, telegramID, "tribute_topup_not_eligible")
 		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: user %d not eligible (status=%s), pkg=%dGB", telegramID, rwUser.Status, gbAmount))
 		return fmt.Errorf("topup: user %d not eligible: %s", telegramID, rwUser.Status)
 	}
@@ -305,8 +309,7 @@ func (c *Client) applyTopup(ctx context.Context, topupID int64, remnaUUID string
 		slog.Error("topup: mark completed failed (Remnawave already updated)", "error", err, "topup_id", topupID)
 	}
 	newLimitGB := int(targetBytes) / int(config.BytesInGigabyte())
-	msg := fmt.Sprintf("✅ Зачислено <b>+%d ГБ</b>.\nТекущий лимит трафика: <b>%d ГБ</b>.", gbAmount, newLimitGB)
-	c.notifyUser(ctx, telegramID, msg)
+	c.notifyUserKey(ctx, telegramID, "tribute_topup_success", gbAmount, newLimitGB)
 	slog.Info("topup: completed", "telegram_id", telegramID, "gb_amount", gbAmount, "new_limit_gb", newLimitGB)
 	return nil
 }
@@ -316,6 +319,25 @@ func (c *Client) notifyUser(ctx context.Context, telegramID int64, text string) 
 	if err != nil {
 		slog.Error("topup: failed to send user message", "telegram_id", telegramID, "error", err)
 	}
+}
+
+// notifyUserKey resolves the customer's language, looks up text by translation key, formats it
+// with args when provided, and sends it via notifyUser. Mirrors adminops.Service.notifyKey — same
+// fix for the same disease (hardcoded Russian strings bypassing the translation system), but with
+// its own key set since self-service topup wording differs from admin-triggered topup wording.
+func (c *Client) notifyUserKey(ctx context.Context, telegramID int64, key string, args ...any) {
+	if c.translation == nil {
+		return
+	}
+	lang := ""
+	if customer, err := c.customerRepository.FindByTelegramId(ctx, telegramID); err == nil && customer != nil {
+		lang = customer.Language
+	}
+	text := c.translation.GetText(lang, key)
+	if len(args) > 0 {
+		text = fmt.Sprintf(text, args...)
+	}
+	c.notifyUser(ctx, telegramID, text)
 }
 
 func (c *Client) notifyAdmin(ctx context.Context, text string) {

@@ -15,14 +15,14 @@ type UserTraffic struct {
 
 // HwidDevice represents a hardware device registered for a user.
 type HwidDevice struct {
-	Hwid        string     `json:"hwid"`
-	UserUuid    string     `json:"userUuid"`
-	Platform    *string    `json:"platform"`
-	OsVersion   *string    `json:"osVersion"`
-	DeviceModel *string    `json:"deviceModel"`
-	UserAgent   *string    `json:"userAgent"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
+	Hwid        string    `json:"hwid"`
+	UserUuid    string    `json:"userUuid"`
+	Platform    *string   `json:"platform"`
+	OsVersion   *string   `json:"osVersion"`
+	DeviceModel *string   `json:"deviceModel"`
+	UserAgent   *string   `json:"userAgent"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type getUserHwidDevicesResponse struct {

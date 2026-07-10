@@ -50,6 +50,26 @@ func (h *Handler) handleBroadcastSend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, broadcastSendResponse{JobID: jobID})
 }
 
+type broadcastTestRequest struct {
+	Text string `json:"text"`
+}
+
+// handleBroadcastTest sends the draft text only to the configured admin telegram ID — a preview
+// send before committing to a real broadcast, preserving the bot's old "🧪 Только мне" button now
+// that the bot-native broadcast dialog has been removed.
+func (h *Handler) handleBroadcastTest(w http.ResponseWriter, r *http.Request) {
+	var req broadcastTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text is required")
+		return
+	}
+	if err := h.ops.SendTestBroadcast(r.Context(), req.Text, "webapi"); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) handleBroadcastStatus(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("jobId")
 	progress, ok := h.ops.BroadcastStatus(jobID)

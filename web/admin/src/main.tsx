@@ -60,7 +60,11 @@ type AuthState = { status: "loading" } | { status: "error"; message: string } | 
 
 function App() {
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const route = useRoute();
+
+  // Auto-close the off-canvas drawer whenever the route changes (e.g. after tapping a nav item).
+  useEffect(() => setMobileNavOpen(false), [route.name]);
 
   useEffect(() => {
     initTelegramChrome();
@@ -95,9 +99,13 @@ function App() {
 
   return (
     <div class="app-shell">
-      <Sidebar current={route} />
+      <Sidebar current={route} open={mobileNavOpen} onNavigate={() => setMobileNavOpen(false)} />
       <div class="main-column">
-        <Topbar adminId={auth.adminId || null} title={TITLES[route.name]} />
+        <Topbar
+          adminId={auth.adminId || null}
+          title={TITLES[route.name]}
+          onMenuClick={() => setMobileNavOpen((o) => !o)}
+        />
         <div class="page-content">
           <RouteView route={route} />
         </div>

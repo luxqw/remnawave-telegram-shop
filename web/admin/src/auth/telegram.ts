@@ -1,12 +1,21 @@
+import { useEffect } from "preact/hooks";
 import { api, setToken } from "../api/client";
 
 // Minimal shape of the global injected by https://telegram.org/js/telegram-web-app.js.
+interface TelegramWebAppBackButton {
+  show(): void;
+  hide(): void;
+  onClick(cb: () => void): void;
+  offClick(cb: () => void): void;
+}
+
 interface TelegramWebApp {
   initData: string;
   ready(): void;
   expand(): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
+  BackButton?: TelegramWebAppBackButton;
 }
 
 declare global {
@@ -41,6 +50,10 @@ export async function login(): Promise<LoginResponse> {
   return res;
 }
 
+// The black-glass palette is this app's visual identity, not a system preference — deliberately
+// NOT wired to Telegram.WebApp.themeParams/colorScheme, so the panel looks the same regardless of
+// whether the admin's Telegram client is set to light or dark. setHeaderColor/setBackgroundColor
+// below just match Telegram's own chrome to that fixed palette, they don't read anything from it.
 export function initTelegramChrome() {
   const webApp = getTelegramWebApp();
   if (!webApp) return;
@@ -48,4 +61,21 @@ export function initTelegramChrome() {
   webApp.expand();
   webApp.setHeaderColor?.("#08080A");
   webApp.setBackgroundColor?.("#08080A");
+}
+
+// Shows Telegram's native chrome-level back button while `enabled` is true, wired to `onBack`.
+// Purely additive to any in-page "← Back" link — the native control is unavailable outside a
+// real Telegram client (e.g. a plain browser tab), so screens should keep an in-page fallback.
+export function useTelegramBackButton(onBack: () => void, enabled: boolean) {
+  useEffect(() => {
+    const webApp = getTelegramWebApp();
+    const backButton = webApp?.BackButton;
+    if (!backButton || !enabled) return;
+    backButton.onClick(onBack);
+    backButton.show();
+    return () => {
+      backButton.offClick(onBack);
+      backButton.hide();
+    };
+  }, [onBack, enabled]);
 }

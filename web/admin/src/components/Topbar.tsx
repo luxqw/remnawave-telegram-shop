@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api } from "../api/client";
 import type { DashboardHealth } from "../api/types";
 
-export function Topbar(props: { adminId: number | null; title: string }) {
+export function Topbar(props: { adminId: number | null; title: string; onMenuClick: () => void }) {
   const [health, setHealth] = useState<DashboardHealth | null>(null);
 
   useEffect(() => {
@@ -28,7 +28,10 @@ export function Topbar(props: { adminId: number | null; title: string }) {
 
   return (
     <header class="topbar">
-      <span class="page-title" style={{ fontSize: 15 }}>{props.title}</span>
+      <div class="row" style={{ gap: 12 }}>
+        <button class="hamburger-btn" onClick={props.onMenuClick} aria-label="Меню">☰</button>
+        <span class="page-title" style={{ fontSize: 15 }}>{props.title}</span>
+      </div>
       <div class="row">
         <span class={`health-dot ${isHealthy ? "" : "down"}`} title={health ? `${health.status}` : "unknown"} />
         <div class="identity-chip">

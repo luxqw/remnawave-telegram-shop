@@ -1,4 +1,4 @@
-﻿package payment
+package payment
 
 import (
 	"context"
@@ -567,5 +567,3 @@ func (s PaymentService) sendReceiptToMoynalog(ctx context.Context, purchase *dat
 	slog.Info("Receipt sent to Moynalog", "purchase_id", utils.MaskHalfInt64(purchase.ID), "amount", amount, "comment", comment)
 	return nil
 }
-
-

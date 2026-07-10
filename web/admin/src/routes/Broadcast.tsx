@@ -40,6 +40,19 @@ export function Broadcast() {
     }
   };
 
+  const sendTest = async () => {
+    if (!text.trim()) {
+      toast.push("Введите текст рассылки", "error");
+      return;
+    }
+    try {
+      await api.post("/admin/api/broadcast/test", { text });
+      toast.push("Тест отправлен вам в Telegram");
+    } catch (err) {
+      toast.push(err instanceof ApiError ? err.message : "Ошибка отправки теста", "error");
+    }
+  };
+
   const send = async () => {
     try {
       const res = await api.post<{ jobId: string }>("/admin/api/broadcast/send", { text, segment });
@@ -80,6 +93,7 @@ export function Broadcast() {
           </div>
           <div class="row">
             <button class="btn btn-primary" onClick={openConfirm}>Отправить рассылку</button>
+            <button class="btn" onClick={sendTest}>🧪 Отправить тест себе</button>
           </div>
         </div>
       </GlassCard>
