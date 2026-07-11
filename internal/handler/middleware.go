@@ -84,6 +84,11 @@ func (h Handler) SuspiciousUserFilterMiddleware(next bot.HandlerFunc) bot.Handle
 			return
 		}
 
+		if userID == config.GetAdminTelegramId() {
+			next(ctx, b, update)
+			return
+		}
+
 		if config.GetBlockedTelegramIds()[userID] {
 			slog.Warn("blocked user by telegram id", "userId", utils.MaskHalfInt64(userID))
 			_, err := b.SendMessage(ctx, &bot.SendMessageParams{
