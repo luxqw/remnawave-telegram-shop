@@ -120,6 +120,7 @@ type purchaseDTO struct {
 	CreatedAt   time.Time  `json:"createdAt"`
 	PaidAt      *time.Time `json:"paidAt"`
 	ExpireAt    *time.Time `json:"expireAt"`
+	TelegramID  *int64     `json:"telegramId,omitempty"`
 }
 
 func toPurchaseDTO(p database.Purchase) purchaseDTO {

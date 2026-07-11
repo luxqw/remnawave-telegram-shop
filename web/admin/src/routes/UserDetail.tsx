@@ -8,6 +8,8 @@ import { DataTable, type Column } from "../components/DataTable";
 import { useToast } from "../components/Toast";
 import { navigate } from "../router";
 import { useTelegramBackButton } from "../auth/telegram";
+import { formatMoney } from "../lib/format";
+import { TelegramUserLink } from "../components/TelegramUserLink";
 
 type PendingAction =
   | { kind: "status"; status: "ACTIVE" | "DISABLED" }
@@ -108,7 +110,7 @@ export function UserDetail(props: { id: number }) {
 
   const orderColumns: Column<Purchase>[] = [
     { header: "ID", render: (p) => <span class="mono">{p.id}</span> },
-    { header: "Сумма", render: (p) => `${p.amount.toFixed(2)} ${p.currency}`, align: "right" },
+    { header: "Сумма", render: (p) => formatMoney(p.amount, p.currency), align: "right" },
     { header: "Статус", render: (p) => <Badge variant={p.status === "paid" ? "success" : "neutral"}>{p.status}</Badge> },
     { header: "Тип", render: (p) => p.invoiceType },
     { header: "Создан", render: (p) => new Date(p.createdAt).toLocaleDateString("ru-RU") },
@@ -130,7 +132,7 @@ export function UserDetail(props: { id: number }) {
   ];
 
   const referralColumns: Column<Referral>[] = [
-    { header: "Приглашённый", render: (r) => <span class="mono">{r.refereeId}</span> },
+    { header: "Приглашённый", render: (r) => <TelegramUserLink id={r.refereeId} /> },
     { header: "Дата", render: (r) => new Date(r.usedAt).toLocaleDateString("ru-RU") },
     { header: "Бонус", render: (r) => (r.bonusGranted ? <Badge variant="success">Начислен</Badge> : <Badge variant="neutral">Ожидание</Badge>) },
   ];
@@ -145,7 +147,7 @@ export function UserDetail(props: { id: number }) {
             <div class="row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div class="page-title" style={{ fontSize: 18 }}>
-                  <span class="mono">{customer.telegramId}</span>
+                  <TelegramUserLink id={customer.telegramId} />
                 </div>
                 <div class="page-subtitle">Язык: {customer.language} · Регистрация: {new Date(customer.createdAt).toLocaleDateString("ru-RU")}</div>
               </div>

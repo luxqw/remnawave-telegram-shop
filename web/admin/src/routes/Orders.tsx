@@ -5,6 +5,8 @@ import { GlassCard } from "../components/GlassCard";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
+import { TelegramUserLink } from "../components/TelegramUserLink";
+import { formatMoney } from "../lib/format";
 
 const STATUSES = ["", "new", "pending", "paid", "cancel"];
 const TYPES = ["", "crypto", "yookasa", "telegram", "tribute"];
@@ -31,7 +33,8 @@ export function Orders() {
 
   const columns: Column<Purchase>[] = [
     { header: "ID", render: (p) => <span class="mono">{p.id}</span> },
-    { header: "Сумма", render: (p) => `${p.amount.toFixed(2)} ${p.currency}`, align: "right" },
+    { header: "Пользователь", render: (p) => <TelegramUserLink id={p.telegramId} /> },
+    { header: "Сумма", render: (p) => formatMoney(p.amount, p.currency), align: "right" },
     { header: "Мес.", render: (p) => p.month, align: "right" },
     { header: "Статус", render: (p) => <Badge variant={p.status === "paid" ? "success" : p.status === "cancel" ? "danger" : "neutral"}>{p.status}</Badge> },
     { header: "Тип", render: (p) => p.invoiceType },

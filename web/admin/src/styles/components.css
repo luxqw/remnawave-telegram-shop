@@ -450,6 +450,30 @@
   border-color: var(--surface-glass-border);
 }
 
+/* --- Telegram profile deep link --- */
+
+.tg-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-primary);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition:
+    color var(--duration-fast) var(--ease-out-expo),
+    border-color var(--duration-fast) var(--ease-out-expo);
+}
+
+.tg-link:hover {
+  color: var(--accent-mono);
+  border-bottom-color: var(--surface-glass-border);
+}
+
+.tg-link-icon {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
 /* --- Modal --- */
 
 .modal-backdrop {

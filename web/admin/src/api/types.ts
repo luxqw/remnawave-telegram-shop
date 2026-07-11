@@ -42,6 +42,7 @@ export interface Purchase {
   createdAt: string;
   paidAt: string | null;
   expireAt: string | null;
+  telegramId?: number;
 }
 
 export interface AuditLogEntry {

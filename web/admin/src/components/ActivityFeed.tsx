@@ -1,13 +1,18 @@
 import { useEffect, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import { api } from "../api/client";
 import type { ActivityEvent } from "../api/types";
 import { GlassCard } from "./GlassCard";
+import { TelegramUserLink } from "./TelegramUserLink";
 
-const TYPE_META: Record<ActivityEvent["type"], { icon: string; label: (e: ActivityEvent) => string }> = {
-  signup: { icon: "◍", label: (e) => `Регистрация: ${e.targetId}` },
-  purchase: { icon: "💰", label: (e) => `Оплата ${e.detail} от ${e.targetId}` },
-  referral_bonus: { icon: "🎁", label: (e) => `Реферальный бонус: ${e.actorId} → ${e.targetId}` },
-  admin_action: { icon: "🛠", label: (e) => `${e.detail} · пользователь ${e.targetId}` },
+const TYPE_META: Record<ActivityEvent["type"], { icon: string; label: (e: ActivityEvent) => ComponentChildren }> = {
+  signup: { icon: "◍", label: (e) => <>Регистрация: <TelegramUserLink id={e.targetId} /></> },
+  purchase: { icon: "💰", label: (e) => <>Оплата {e.detail} от <TelegramUserLink id={e.targetId} /></> },
+  referral_bonus: {
+    icon: "🎁",
+    label: (e) => <>Реферальный бонус: <TelegramUserLink id={e.actorId} /> → <TelegramUserLink id={e.targetId} /></>,
+  },
+  admin_action: { icon: "🛠", label: (e) => <>{e.detail} · пользователь <TelegramUserLink id={e.targetId} /></> },
 };
 
 export function ActivityFeed() {

@@ -31,7 +31,7 @@ type Payload struct {
 	ProductName       string    `json:"product_name"`
 	PurchaseCreatedAt time.Time `json:"purchase_created_at"`
 	// Common fields
-	Amount         int    `json:"amount"`
+	Amount         int    `json:"amount"` // minor units (kopecks) — divide by 100 for whole rubles
 	Currency       string `json:"currency"`
 	UserID         int    `json:"user_id"`
 	TelegramUserID int64  `json:"telegram_user_id"`

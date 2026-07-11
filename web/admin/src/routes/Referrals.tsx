@@ -5,6 +5,7 @@ import { GlassCard } from "../components/GlassCard";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
+import { TelegramUserLink } from "../components/TelegramUserLink";
 
 export function Referrals() {
   const [page, setPage] = useState<Page<Referral> | null>(null);
@@ -15,8 +16,8 @@ export function Referrals() {
   }, [pageNum]);
 
   const columns: Column<Referral>[] = [
-    { header: "Реферер", render: (r) => <span class="mono">{r.referrerId}</span> },
-    { header: "Приглашённый", render: (r) => <span class="mono">{r.refereeId}</span> },
+    { header: "Реферер", render: (r) => <TelegramUserLink id={r.referrerId} /> },
+    { header: "Приглашённый", render: (r) => <TelegramUserLink id={r.refereeId} /> },
     { header: "Дата", render: (r) => new Date(r.usedAt).toLocaleString("ru-RU") },
     { header: "Бонус", render: (r) => (r.bonusGranted ? <Badge variant="success">Начислен</Badge> : <Badge variant="neutral">Ожидание</Badge>) },
   ];

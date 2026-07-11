@@ -5,6 +5,7 @@ import { GlassCard } from "../components/GlassCard";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
+import { TelegramUserLink } from "../components/TelegramUserLink";
 
 export function AuditLog() {
   const [page, setPage] = useState<Page<AuditLogEntry> | null>(null);
@@ -24,7 +25,8 @@ export function AuditLog() {
   const columns: Column<AuditLogEntry>[] = [
     { header: "Дата", render: (e) => new Date(e.createdAt).toLocaleString("ru-RU") },
     { header: "Действие", render: (e) => e.action },
-    { header: "Цель", render: (e) => <span class="mono">{e.targetTelegramId}</span> },
+    { header: "Админ", render: (e) => <TelegramUserLink id={e.adminTelegramId} /> },
+    { header: "Цель", render: (e) => <TelegramUserLink id={e.targetTelegramId} /> },
     { header: "Исход", render: (e) => <Badge variant={e.outcome === "success" ? "success" : "danger"}>{e.outcome}</Badge> },
     { header: "Источник", render: (e) => e.source },
     { header: "Ошибка", render: (e) => e.errorMessage ?? "—" },

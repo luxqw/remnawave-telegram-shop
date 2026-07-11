@@ -1,9 +1,13 @@
 package webapp
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+
+	"remnawave-tg-shop-bot/internal/database"
 )
 
 func (h *Handler) handleOrdersList(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +34,40 @@ func (h *Handler) handleOrdersList(w http.ResponseWriter, r *http.Request) {
 	for _, p := range purchases {
 		items = append(items, toPurchaseDTO(p))
 	}
+	h.hydrateTelegramIDs(r.Context(), purchases, items)
 	writeJSON(w, http.StatusOK, Page[purchaseDTO]{Items: items, Total: total, Page: page, Limit: limit})
+}
+
+// hydrateTelegramIDs batch-fetches each purchase's customer and attaches TelegramID to the
+// matching DTO, so the admin UI can show/link who made each order without a per-row lookup.
+// Purchase only carries the internal customer_id; this is the one list endpoint where a raw
+// telegram_id isn't already available on the row.
+func (h *Handler) hydrateTelegramIDs(ctx context.Context, purchases []database.Purchase, items []purchaseDTO) {
+	if len(purchases) == 0 {
+		return
+	}
+	seen := make(map[int64]bool, len(purchases))
+	ids := make([]int64, 0, len(purchases))
+	for _, p := range purchases {
+		if !seen[p.CustomerID] {
+			seen[p.CustomerID] = true
+			ids = append(ids, p.CustomerID)
+		}
+	}
+	customers, err := h.customerRepository.FindByIds(ctx, ids)
+	if err != nil {
+		slog.Warn("failed to hydrate order telegram ids", "error", err)
+		return
+	}
+	byID := make(map[int64]int64, len(customers))
+	for _, c := range customers {
+		byID[c.ID] = c.TelegramID
+	}
+	for i, p := range purchases {
+		if tgID, ok := byID[p.CustomerID]; ok {
+			items[i].TelegramID = &tgID
+		}
+	}
 }
 
 func (h *Handler) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +84,9 @@ func (h *Handler) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "order not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, toPurchaseDTO(*purchase))
+	items := []purchaseDTO{toPurchaseDTO(*purchase)}
+	h.hydrateTelegramIDs(r.Context(), []database.Purchase{*purchase}, items)
+	writeJSON(w, http.StatusOK, items[0])
 }
 
 // handleOrdersExportCSV streams the same filtered query as handleOrdersList as CSV, capped at a
@@ -73,11 +112,16 @@ func (h *Handler) handleOrdersExportCSV(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	items := make([]purchaseDTO, len(purchases))
+	for i, p := range purchases {
+		items[i] = toPurchaseDTO(p)
+	}
+	h.hydrateTelegramIDs(r.Context(), purchases, items)
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="orders.csv"`)
-	fmt.Fprintln(w, "id,customer_id,amount,currency,month,status,invoice_type,created_at,paid_at,expire_at")
-	for _, p := range purchases {
+	fmt.Fprintln(w, "id,customer_id,telegram_id,amount,currency,month,status,invoice_type,created_at,paid_at,expire_at")
+	for i, p := range purchases {
 		paidAt := ""
 		if p.PaidAt != nil {
 			paidAt = p.PaidAt.Format("2006-01-02T15:04:05Z07:00")
@@ -86,8 +130,12 @@ func (h *Handler) handleOrdersExportCSV(w http.ResponseWriter, r *http.Request) 
 		if p.ExpireAt != nil {
 			expireAt = p.ExpireAt.Format("2006-01-02T15:04:05Z07:00")
 		}
-		fmt.Fprintf(w, "%d,%d,%.2f,%s,%d,%s,%s,%s,%s,%s\n",
-			p.ID, p.CustomerID, p.Amount, p.Currency, p.Month, p.Status, p.InvoiceType,
+		telegramID := ""
+		if tg := items[i].TelegramID; tg != nil {
+			telegramID = strconv.FormatInt(*tg, 10)
+		}
+		fmt.Fprintf(w, "%d,%d,%s,%.2f,%s,%d,%s,%s,%s,%s,%s\n",
+			p.ID, p.CustomerID, telegramID, p.Amount, p.Currency, p.Month, p.Status, p.InvoiceType,
 			p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"), paidAt, expireAt)
 	}
 }

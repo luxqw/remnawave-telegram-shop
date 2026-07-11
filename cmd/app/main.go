@@ -316,6 +316,7 @@ func registerAdminCommands(ctx context.Context, b *bot.Bot) {
 	}
 
 	commands := []models.BotCommand{
+		{Command: "start", Description: "Начать работу с ботом"},
 		{Command: "admin", Description: "Открыть панель администратора"},
 		{Command: "sync", Description: "Синхронизация пользователей с Remnawave"},
 	}

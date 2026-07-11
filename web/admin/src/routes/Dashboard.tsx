@@ -6,6 +6,7 @@ import { StatTile } from "../components/StatTile";
 import { ChartLine } from "../components/ChartLine";
 import { ChartBar } from "../components/ChartBar";
 import { ActivityFeed } from "../components/ActivityFeed";
+import { formatMoney } from "../lib/format";
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -30,7 +31,14 @@ export function Dashboard() {
       .catch((err) => setError(err instanceof Error ? err.message : "Ошибка загрузки"));
   }, []);
 
-  if (error) return <div class="page-subtitle">{error}</div>;
+  if (error) {
+    return (
+      <GlassCard>
+        <div class="stat-tile-label" style={{ marginBottom: 6 }}>Не удалось загрузить дашборд</div>
+        <div class="page-subtitle">{error}</div>
+      </GlassCard>
+    );
+  }
   if (!stats || !revenue || !growth || !referrals) {
     return <div class="shimmer" style={{ height: 300 }} />;
   }
@@ -45,7 +53,7 @@ export function Dashboard() {
             <div class="row" style={{ justifyContent: "space-between", marginBottom: 14 }}>
               <div>
                 <div class="stat-tile-label">Выручка за 30 дней</div>
-                <div class="stat-tile-value mono">{totalRevenue.toFixed(2)}</div>
+                <div class="stat-tile-value mono">{formatMoney(totalRevenue, "RUB")}</div>
               </div>
             </div>
             <ChartLine points={revenue} height={220} />

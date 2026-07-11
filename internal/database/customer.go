@@ -180,6 +180,36 @@ func (cr *CustomerRepository) FindAll(ctx context.Context) ([]Customer, error) {
 	return customers, nil
 }
 
+// FindByIds looks customers up by their internal DB id (as opposed to FindByTelegramIds, which
+// looks up by telegram_id). Used to hydrate a page of rows that only carry customer_id — e.g. the
+// admin webapp's orders list — with the customer's telegram_id for display.
+func (cr *CustomerRepository) FindByIds(ctx context.Context, ids []int64) ([]Customer, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	sql, args, err := sq.Select(cols...).From("customer").Where(sq.Eq{"id": ids}).PlaceholderFormat(sq.Dollar).ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build select query: %w", err)
+	}
+	rows, err := cr.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query customers by id: %w", err)
+	}
+	defer rows.Close()
+	var customers []Customer
+	for rows.Next() {
+		var c Customer
+		if err := scanCustomer(rows, &c); err != nil {
+			return nil, fmt.Errorf("failed to scan customer row: %w", err)
+		}
+		customers = append(customers, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating over customer rows: %w", err)
+	}
+	return customers, nil
+}
+
 func (cr *CustomerRepository) FindByTelegramIds(ctx context.Context, telegramIDs []int64) ([]Customer, error) {
 	sql, args, err := sq.Select(cols...).From("customer").Where(sq.Eq{"telegram_id": telegramIDs}).PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {

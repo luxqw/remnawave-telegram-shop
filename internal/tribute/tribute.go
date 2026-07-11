@@ -204,7 +204,7 @@ func (c *Client) newSubscriptionHandler(ctx context.Context, wh SubscriptionWebh
 	if customer == nil {
 		return fmt.Errorf("newSubscription: %w", payment.ErrCustomerNotFound)
 	}
-	_, purchaseId, err := c.paymentService.CreatePurchase(ctx, float64(wh.Payload.Amount), months, customer, database.InvoiceTypeTribute)
+	_, purchaseId, err := c.paymentService.CreatePurchase(ctx, float64(wh.Payload.Amount)/100, months, customer, database.InvoiceTypeTribute)
 	if err != nil {
 		return err
 	}
@@ -245,7 +245,7 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 		payID := tributePaymentID
 		_, _ = c.topupRepository.Create(ctx, &database.TrafficTopup{
 			TelegramID: telegramID, RemnawaveUUID: rwUser.UUID.String(), GBAmount: gbAmount,
-			PriceAmount: float64(wh.Payload.Amount), Currency: wh.Payload.Currency,
+			PriceAmount: float64(wh.Payload.Amount) / 100, Currency: wh.Payload.Currency,
 			TributePaymentID: &payID, Status: database.TopupStatusCompleted,
 		})
 		return nil
@@ -280,7 +280,7 @@ func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook,
 			tb := targetBytes
 			id, err := c.topupRepository.Create(ctx, &database.TrafficTopup{
 				TelegramID: telegramID, RemnawaveUUID: remnaUUID, GBAmount: gbAmount,
-				PriceAmount: float64(wh.Payload.Amount), Currency: wh.Payload.Currency,
+				PriceAmount: float64(wh.Payload.Amount) / 100, Currency: wh.Payload.Currency,
 				TributePaymentID: &payID, TargetTrafficLimitBytes: &tb, Status: database.TopupStatusProcessing,
 			})
 			if err != nil {

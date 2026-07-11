@@ -5,6 +5,7 @@ import { GlassCard } from "../components/GlassCard";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
+import { TelegramUserLink } from "../components/TelegramUserLink";
 import { navigate } from "../router";
 
 const FILTERS = [
@@ -41,7 +42,7 @@ export function Users() {
   }, [pageNum, filter, search]);
 
   const columns: Column<Customer>[] = [
-    { header: "Telegram ID", render: (c) => <span class="mono">{c.telegramId}</span> },
+    { header: "Telegram ID", render: (c) => <TelegramUserLink id={c.telegramId} /> },
     { header: "Статус", render: statusBadge },
     { header: "Истекает", render: (c) => (c.expireAt ? new Date(c.expireAt).toLocaleDateString("ru-RU") : "—") },
     { header: "Язык", render: (c) => c.language },
