@@ -42,7 +42,7 @@ export function Users() {
   }, [pageNum, filter, search]);
 
   const columns: Column<Customer>[] = [
-    { header: "Telegram ID", render: (c) => <TelegramUserLink id={c.telegramId} /> },
+    { header: "Telegram ID", render: (c) => <TelegramUserLink id={c.telegramId} username={c.username} /> },
     { header: "Статус", render: statusBadge },
     { header: "Истекает", render: (c) => (c.expireAt ? new Date(c.expireAt).toLocaleDateString("ru-RU") : "—") },
     { header: "Язык", render: (c) => c.language },

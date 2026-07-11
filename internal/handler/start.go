@@ -20,6 +20,10 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 	ctxWithTime, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	langCode := update.Message.From.LanguageCode
+	var username *string
+	if update.Message.From.Username != "" {
+		username = &update.Message.From.Username
+	}
 	existingCustomer, err := h.customerRepository.FindByTelegramId(ctxWithTime, update.Message.Chat.ID)
 	if err != nil {
 		slog.Error("error finding customer by telegram id", "error", err)
@@ -30,6 +34,7 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 		existingCustomer, err = h.customerRepository.Create(ctxWithTime, &database.Customer{
 			TelegramID: update.Message.Chat.ID,
 			Language:   langCode,
+			Username:   username,
 		})
 		if err != nil {
 			slog.Error("error creating customer", "error", err)
@@ -54,7 +59,11 @@ func (h Handler) StartCommandHandler(ctx context.Context, b *bot.Bot, update *mo
 			}
 		}
 	} else {
-		err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, map[string]interface{}{"language": langCode})
+		updates := map[string]interface{}{"language": langCode}
+		if username != nil {
+			updates["username"] = *username
+		}
+		err = h.customerRepository.UpdateFields(ctx, existingCustomer.ID, updates)
 		if err != nil {
 			slog.Error("Error updating customer", "error", err)
 			return

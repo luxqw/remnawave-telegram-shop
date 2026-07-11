@@ -30,9 +30,10 @@ type Customer struct {
 	Language             string     `db:"language"`
 	IsTrial              bool       `db:"is_trial"`
 	LastTrafficWarningAt *time.Time `db:"last_traffic_warning_at"`
+	Username             *string    `db:"username"`
 }
 
-var cols = []string{"id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial", "last_traffic_warning_at"}
+var cols = []string{"id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial", "last_traffic_warning_at", "username"}
 
 func scanCustomer(row interface{ Scan(...interface{}) error }, customer *Customer) error {
 	return row.Scan(
@@ -44,6 +45,7 @@ func scanCustomer(row interface{ Scan(...interface{}) error }, customer *Custome
 		&customer.Language,
 		&customer.IsTrial,
 		&customer.LastTrafficWarningAt,
+		&customer.Username,
 	)
 }
 
@@ -112,13 +114,13 @@ func (cr *CustomerRepository) Create(ctx context.Context, customer *Customer) (*
 
 func (cr *CustomerRepository) FindOrCreate(ctx context.Context, customer *Customer) (*Customer, error) {
 	query := `
-		INSERT INTO customer (telegram_id, expire_at, language)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = customer.telegram_id
-		RETURNING id, telegram_id, expire_at, created_at, subscription_link, language, is_trial, last_traffic_warning_at
+		INSERT INTO customer (telegram_id, expire_at, language, username)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = customer.telegram_id, username = COALESCE(EXCLUDED.username, customer.username)
+		RETURNING id, telegram_id, expire_at, created_at, subscription_link, language, is_trial, last_traffic_warning_at, username
 	`
 	var result Customer
-	if err := scanCustomer(cr.pool.QueryRow(ctx, query, customer.TelegramID, customer.ExpireAt, customer.Language), &result); err != nil {
+	if err := scanCustomer(cr.pool.QueryRow(ctx, query, customer.TelegramID, customer.ExpireAt, customer.Language, customer.Username), &result); err != nil {
 		return nil, fmt.Errorf("failed to find or create customer: %w", err)
 	}
 	slog.Info("user found or created in bot database", "telegramId", utils.MaskHalfInt64(result.TelegramID))

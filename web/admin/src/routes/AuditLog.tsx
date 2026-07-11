@@ -25,8 +25,8 @@ export function AuditLog() {
   const columns: Column<AuditLogEntry>[] = [
     { header: "Дата", render: (e) => new Date(e.createdAt).toLocaleString("ru-RU") },
     { header: "Действие", render: (e) => e.action },
-    { header: "Админ", render: (e) => <TelegramUserLink id={e.adminTelegramId} /> },
-    { header: "Цель", render: (e) => <TelegramUserLink id={e.targetTelegramId} /> },
+    { header: "Админ", render: (e) => <TelegramUserLink id={e.adminTelegramId} username={e.adminUsername} /> },
+    { header: "Цель", render: (e) => <TelegramUserLink id={e.targetTelegramId} username={e.targetUsername} /> },
     { header: "Исход", render: (e) => <Badge variant={e.outcome === "success" ? "success" : "danger"}>{e.outcome}</Badge> },
     { header: "Источник", render: (e) => e.source },
     { header: "Ошибка", render: (e) => e.errorMessage ?? "—" },

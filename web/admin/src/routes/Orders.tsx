@@ -33,7 +33,7 @@ export function Orders() {
 
   const columns: Column<Purchase>[] = [
     { header: "ID", render: (p) => <span class="mono">{p.id}</span> },
-    { header: "Пользователь", render: (p) => <TelegramUserLink id={p.telegramId} /> },
+    { header: "Пользователь", render: (p) => <TelegramUserLink id={p.telegramId} username={p.username} /> },
     { header: "Сумма", render: (p) => formatMoney(p.amount, p.currency), align: "right" },
     { header: "Мес.", render: (p) => p.month, align: "right" },
     { header: "Статус", render: (p) => <Badge variant={p.status === "paid" ? "success" : p.status === "cancel" ? "danger" : "neutral"}>{p.status}</Badge> },

@@ -132,7 +132,7 @@ export function UserDetail(props: { id: number }) {
   ];
 
   const referralColumns: Column<Referral>[] = [
-    { header: "Приглашённый", render: (r) => <TelegramUserLink id={r.refereeId} /> },
+    { header: "Приглашённый", render: (r) => <TelegramUserLink id={r.refereeId} username={r.refereeUsername} /> },
     { header: "Дата", render: (r) => new Date(r.usedAt).toLocaleDateString("ru-RU") },
     { header: "Бонус", render: (r) => (r.bonusGranted ? <Badge variant="success">Начислен</Badge> : <Badge variant="neutral">Ожидание</Badge>) },
   ];
@@ -147,7 +147,7 @@ export function UserDetail(props: { id: number }) {
             <div class="row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div class="page-title" style={{ fontSize: 18 }}>
-                  <TelegramUserLink id={customer.telegramId} />
+                  <TelegramUserLink id={customer.telegramId} username={customer.username} />
                 </div>
                 <div class="page-subtitle">Язык: {customer.language} · Регистрация: {new Date(customer.createdAt).toLocaleDateString("ru-RU")}</div>
               </div>

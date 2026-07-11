@@ -474,6 +474,11 @@
   color: var(--text-tertiary);
 }
 
+.tg-link-disabled {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
 /* --- Modal --- */
 
 .modal-backdrop {

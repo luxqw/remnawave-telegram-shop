@@ -1,17 +1,31 @@
-// Renders a Telegram ID as a clickable deep link to that user's profile (tg://user?id=...). Used
-// wherever a customer/admin telegram_id is displayed so admins can jump straight into a chat.
+import { openTelegramProfile } from "../auth/telegram";
+
+// Renders a Telegram ID, clickable through to the user's profile when a username is known.
 // stopPropagation matters because most usages sit inside DataTable rows that already have an
-// onRowClick handler.
-export function TelegramUserLink(props: { id: number | null | undefined }) {
+// onRowClick handler. Without a username there's no reliable way to open a profile from inside a
+// Telegram Mini App (see openTelegramProfile), so the ID renders as plain, non-interactive text.
+export function TelegramUserLink(props: { id: number | null | undefined; username?: string | null }) {
   if (props.id === null || props.id === undefined) return <span class="mono">—</span>;
+
+  if (!props.username) {
+    return (
+      <span class="mono tg-link-disabled" title="У пользователя нет username — открыть профиль нельзя">
+        {props.id}
+      </span>
+    );
+  }
+
+  const username = props.username;
   return (
     <a
       class="mono tg-link"
-      href={`tg://user?id=${props.id}`}
-      target="_blank"
-      rel="noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      title="Открыть профиль в Telegram"
+      href={`https://t.me/${username}`}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openTelegramProfile(username);
+      }}
+      title={`Открыть @${username} в Telegram`}
     >
       <span class="tg-link-icon">↗</span>
       {props.id}

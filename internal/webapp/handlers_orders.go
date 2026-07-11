@@ -59,13 +59,15 @@ func (h *Handler) hydrateTelegramIDs(ctx context.Context, purchases []database.P
 		slog.Warn("failed to hydrate order telegram ids", "error", err)
 		return
 	}
-	byID := make(map[int64]int64, len(customers))
+	byID := make(map[int64]database.Customer, len(customers))
 	for _, c := range customers {
-		byID[c.ID] = c.TelegramID
+		byID[c.ID] = c
 	}
 	for i, p := range purchases {
-		if tgID, ok := byID[p.CustomerID]; ok {
+		if c, ok := byID[p.CustomerID]; ok {
+			tgID := c.TelegramID
 			items[i].TelegramID = &tgID
+			items[i].Username = c.Username
 		}
 	}
 }

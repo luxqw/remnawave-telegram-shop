@@ -16,6 +16,7 @@ interface TelegramWebApp {
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
   BackButton?: TelegramWebAppBackButton;
+  openTelegramLink?(url: string): void;
 }
 
 declare global {
@@ -61,6 +62,21 @@ export function initTelegramChrome() {
   webApp.expand();
   webApp.setHeaderColor?.("#08080A");
   webApp.setBackgroundColor?.("#08080A");
+}
+
+// Opens a Telegram user's profile by username. Mini Apps run inside a sandboxed WebView that has
+// no handler for the tg:// custom URL scheme (attempting to navigate one throws "unknown url
+// scheme"), so tg://user?id= deep links don't work here — Telegram.WebApp.openTelegramLink() is
+// the only officially supported in-app navigation, and it only accepts https://t.me/<username>
+// links. Falls back to a plain new-tab open outside of Telegram (e.g. testing in a browser tab).
+export function openTelegramProfile(username: string) {
+  const url = `https://t.me/${username}`;
+  const webApp = getTelegramWebApp();
+  if (webApp?.openTelegramLink) {
+    webApp.openTelegramLink(url);
+  } else {
+    window.open(url, "_blank", "noreferrer");
+  }
 }
 
 // Shows Telegram's native chrome-level back button while `enabled` is true, wired to `onBack`.

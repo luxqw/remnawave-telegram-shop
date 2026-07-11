@@ -15,6 +15,7 @@ export interface Customer {
   subscriptionLink: string | null;
   language: string;
   isTrial: boolean;
+  username?: string;
 }
 
 export interface RemnawaveUser {
@@ -43,14 +44,17 @@ export interface Purchase {
   paidAt: string | null;
   expireAt: string | null;
   telegramId?: number;
+  username?: string;
 }
 
 export interface AuditLogEntry {
   id: number;
   createdAt: string;
   adminTelegramId: number;
+  adminUsername?: string;
   action: string;
   targetTelegramId: number;
+  targetUsername?: string;
   paramInt: number | null;
   paramText: string | null;
   outcome: string;
@@ -61,7 +65,9 @@ export interface AuditLogEntry {
 export interface Referral {
   id: number;
   referrerId: number;
+  referrerUsername?: string;
   refereeId: number;
+  refereeUsername?: string;
   usedAt: string;
   bonusGranted: boolean;
 }
@@ -100,7 +106,9 @@ export interface ActivityEvent {
   type: "signup" | "purchase" | "referral_bonus" | "admin_action";
   timestamp: string;
   actorId: number | null;
+  actorUsername?: string;
   targetId: number;
+  targetUsername?: string;
   detail: string;
 }
 

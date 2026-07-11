@@ -46,5 +46,6 @@ func (h *Handler) handleAuditList(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		items = append(items, toAuditLogDTO(e))
 	}
+	h.hydrateAuditUsernames(r.Context(), items)
 	writeJSON(w, http.StatusOK, Page[auditLogDTO]{Items: items, Total: total, Page: page, Limit: limit})
 }

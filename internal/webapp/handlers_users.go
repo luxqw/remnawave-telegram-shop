@@ -1,6 +1,7 @@
 package webapp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -31,12 +32,14 @@ type customerDTO struct {
 	SubscriptionLink *string    `json:"subscriptionLink"`
 	Language         string     `json:"language"`
 	IsTrial          bool       `json:"isTrial"`
+	Username         *string    `json:"username,omitempty"`
 }
 
 func toCustomerDTO(c database.Customer) customerDTO {
 	return customerDTO{
 		ID: c.ID, TelegramID: c.TelegramID, ExpireAt: c.ExpireAt, CreatedAt: c.CreatedAt,
 		SubscriptionLink: c.SubscriptionLink, Language: c.Language, IsTrial: c.IsTrial,
+		Username: c.Username,
 	}
 }
 
@@ -121,6 +124,7 @@ type purchaseDTO struct {
 	PaidAt      *time.Time `json:"paidAt"`
 	ExpireAt    *time.Time `json:"expireAt"`
 	TelegramID  *int64     `json:"telegramId,omitempty"`
+	Username    *string    `json:"username,omitempty"`
 }
 
 func toPurchaseDTO(p database.Purchase) purchaseDTO {
@@ -162,8 +166,10 @@ type auditLogDTO struct {
 	ID               int64     `json:"id"`
 	CreatedAt        time.Time `json:"createdAt"`
 	AdminTelegramID  int64     `json:"adminTelegramId"`
+	AdminUsername    *string   `json:"adminUsername,omitempty"`
 	Action           string    `json:"action"`
 	TargetTelegramID int64     `json:"targetTelegramId"`
+	TargetUsername   *string   `json:"targetUsername,omitempty"`
 	ParamInt         *int      `json:"paramInt"`
 	ParamText        *string   `json:"paramText"`
 	Outcome          string    `json:"outcome"`
@@ -176,6 +182,23 @@ func toAuditLogDTO(l database.AdminAuditLog) auditLogDTO {
 		ID: l.ID, CreatedAt: l.CreatedAt, AdminTelegramID: l.AdminTelegramID, Action: l.Action,
 		TargetTelegramID: l.TargetTelegramID, ParamInt: l.ParamInt, ParamText: l.ParamText, Outcome: l.Outcome,
 		ErrorMessage: l.ErrorMessage, Source: l.Source,
+	}
+}
+
+// hydrateAuditUsernames attaches admin/target usernames to a page of audit log DTOs, mirroring
+// hydrateTelegramIDs in handlers_orders.go — one batch lookup instead of a per-row query.
+func (h *Handler) hydrateAuditUsernames(ctx context.Context, items []auditLogDTO) {
+	if len(items) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(items)*2)
+	for _, e := range items {
+		ids = append(ids, e.AdminTelegramID, e.TargetTelegramID)
+	}
+	byID := h.usernamesByTelegramID(ctx, ids)
+	for i := range items {
+		items[i].AdminUsername = byID[items[i].AdminTelegramID]
+		items[i].TargetUsername = byID[items[i].TargetTelegramID]
 	}
 }
 
@@ -193,19 +216,38 @@ func (h *Handler) handleUserAudit(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		items = append(items, toAuditLogDTO(e))
 	}
+	h.hydrateAuditUsernames(r.Context(), items)
 	writeJSON(w, http.StatusOK, items)
 }
 
 type referralDTO struct {
-	ID           int64     `json:"id"`
-	ReferrerID   int64     `json:"referrerId"`
-	RefereeID    int64     `json:"refereeId"`
-	UsedAt       time.Time `json:"usedAt"`
-	BonusGranted bool      `json:"bonusGranted"`
+	ID               int64     `json:"id"`
+	ReferrerID       int64     `json:"referrerId"`
+	ReferrerUsername *string   `json:"referrerUsername,omitempty"`
+	RefereeID        int64     `json:"refereeId"`
+	RefereeUsername  *string   `json:"refereeUsername,omitempty"`
+	UsedAt           time.Time `json:"usedAt"`
+	BonusGranted     bool      `json:"bonusGranted"`
 }
 
 func toReferralDTO(r database.Referral) referralDTO {
 	return referralDTO{ID: r.ID, ReferrerID: r.ReferrerID, RefereeID: r.RefereeID, UsedAt: r.UsedAt, BonusGranted: r.BonusGranted}
+}
+
+// hydrateReferralUsernames attaches referrer/referee usernames to a page of referral DTOs.
+func (h *Handler) hydrateReferralUsernames(ctx context.Context, items []referralDTO) {
+	if len(items) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(items)*2)
+	for _, ref := range items {
+		ids = append(ids, ref.ReferrerID, ref.RefereeID)
+	}
+	byID := h.usernamesByTelegramID(ctx, ids)
+	for i := range items {
+		items[i].ReferrerUsername = byID[items[i].ReferrerID]
+		items[i].RefereeUsername = byID[items[i].RefereeID]
+	}
 }
 
 func (h *Handler) handleUserReferrals(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +264,7 @@ func (h *Handler) handleUserReferrals(w http.ResponseWriter, r *http.Request) {
 	for _, ref := range refs {
 		items = append(items, toReferralDTO(ref))
 	}
+	h.hydrateReferralUsernames(r.Context(), items)
 	writeJSON(w, http.StatusOK, items)
 }
 

@@ -16,8 +16,8 @@ export function Referrals() {
   }, [pageNum]);
 
   const columns: Column<Referral>[] = [
-    { header: "Реферер", render: (r) => <TelegramUserLink id={r.referrerId} /> },
-    { header: "Приглашённый", render: (r) => <TelegramUserLink id={r.refereeId} /> },
+    { header: "Реферер", render: (r) => <TelegramUserLink id={r.referrerId} username={r.referrerUsername} /> },
+    { header: "Приглашённый", render: (r) => <TelegramUserLink id={r.refereeId} username={r.refereeUsername} /> },
     { header: "Дата", render: (r) => new Date(r.usedAt).toLocaleString("ru-RU") },
     { header: "Бонус", render: (r) => (r.bonusGranted ? <Badge variant="success">Начислен</Badge> : <Badge variant="neutral">Ожидание</Badge>) },
   ];
