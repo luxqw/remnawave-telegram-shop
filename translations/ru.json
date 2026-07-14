@@ -19,7 +19,7 @@
   "server_status_button": "🟢 Статус серверов",
   "support_button": "🆘 Поддержка",
   "channel_button": "📢 Канал",
-  "tos_button": "Условия сервиса",
+  "tos_button": "📄 Условия сервиса",
   "subscription_expiring": "⚠️ <b>Подписка истекает %s</b>\n\nПродлите заранее, чтобы не потерять доступ.",
   "renew_subscription_button": "🔄 Продлить подписку",
   "invoice_description": "Подписка Vexel VPN",

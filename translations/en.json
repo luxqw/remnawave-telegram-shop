@@ -19,7 +19,7 @@
   "server_status_button": "🟢 Server status",
   "support_button": "🆘 Support",
   "channel_button": "📢 Channel",
-  "tos_button": "Terms of service",
+  "tos_button": "📄 Terms of service",
   "subscription_expiring": "⚠️ <b>Subscription expires %s</b>\n\nRenew ahead of time to avoid losing access.",
   "renew_subscription_button": "🔄 Renew subscription",
   "invoice_description": "Vexel VPN subscription",
