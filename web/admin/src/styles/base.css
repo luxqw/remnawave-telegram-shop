@@ -18,10 +18,91 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  background-image:
-    radial-gradient(circle at 15% -10%, rgba(255, 255, 255, 0.05), transparent 40%),
-    radial-gradient(circle at 100% 10%, rgba(255, 255, 255, 0.03), transparent 45%);
-  background-attachment: fixed;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+#app {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- Ambient background ---------- */
+/* Ported from web/policy/style.css: two soft radial orbs plus animated "beam" shafts and a
+   grain overlay, layered behind #app (position:fixed + z-index:0, sibling of #app in
+   index.html — see the .atmosphere/.beam markup there). Colors come from the themed
+   --orb-a/--orb-b/--grain-opacity tokens in tokens.css so this reacts to the light/dark
+   toggle automatically. */
+
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 52% at 50% -12%, var(--orb-a), transparent 58%),
+    radial-gradient(90% 46% at 50% 112%, var(--orb-b), transparent 62%);
+  transition: background-color 0.4s ease;
+}
+
+.atmosphere::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+.beam {
+  position: absolute;
+  top: -8%;
+  left: 50%;
+  width: 34vw;
+  height: 145vh;
+  background: linear-gradient(to bottom, var(--orb-a), transparent 68%);
+  filter: blur(70px);
+  transform-origin: top center;
+}
+.beam--b {
+  background: linear-gradient(to bottom, var(--orb-b), transparent 68%);
+}
+
+.beam--a {
+  transform: translateX(-48%) rotate(-17deg);
+}
+.beam--b {
+  transform: translateX(-52%) rotate(17deg);
+}
+
+/* New motion for admin (which previously had none) — gated behind prefers-reduced-motion
+   exactly like web/policy: the animation is only ever applied when the user has NOT
+   requested reduced motion, so reduced-motion users get fully static beams rather than a
+   motion-with-shorter-duration compromise. */
+@media (prefers-reduced-motion: no-preference) {
+  .beam--a {
+    animation: sway-a 40s ease-in-out infinite alternate;
+  }
+  .beam--b {
+    animation: sway-b 46s ease-in-out infinite alternate;
+  }
+
+  @keyframes sway-a {
+    from {
+      transform: translateX(-48%) rotate(-17deg);
+    }
+    to {
+      transform: translateX(-44%) rotate(-12deg);
+    }
+  }
+  @keyframes sway-b {
+    from {
+      transform: translateX(-52%) rotate(17deg);
+    }
+    to {
+      transform: translateX(-56%) rotate(12deg);
+    }
+  }
 }
 
 h1,
@@ -52,8 +133,12 @@ select {
   font-size: inherit;
 }
 
+/* A plain white selection overlay reads fine on the dark canvas but would be nearly
+   invisible on the light-theme canvas, so this goes through the same accent-mono token the
+   rest of the "solid actionable UI" surfaces use (already themed light/dark in tokens.css). */
 ::selection {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--accent-mono);
+  color: var(--accent-mono-ink);
 }
 
 /* Visible 2px white focus outline on every interactive element, per the design system. */

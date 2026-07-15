@@ -1,15 +1,52 @@
 :root {
+  /* Admin deliberately stays near-black (#08080a) rather than adopting web/policy's true
+     #000000. Admin is a data-dense, long-session tool where a perfectly true black crushes
+     depth/shadow cues (glass blur, card elevation) more than a near-black does — this is a
+     considered divergence from web/policy's marketing-page aesthetic, not an oversight. Do
+     not "fix" this back to #000000 in a future parity pass. */
   --bg-canvas: #08080a;
   --bg-elevated: #131316;
-  --surface-glass: rgba(255, 255, 255, 0.04);
-  --surface-glass-hover: rgba(255, 255, 255, 0.07);
+  --surface-glass: rgba(255, 255, 255, 0.055);
+  --surface-glass-hover: rgba(255, 255, 255, 0.085);
   --surface-glass-modal: rgba(255, 255, 255, 0.08);
-  --surface-glass-border: rgba(255, 255, 255, 0.08);
+  --surface-glass-border: rgba(255, 255, 255, 0.14);
+  --surface-topbar: rgba(8, 8, 10, 0.6);
   --text-primary: #f5f5f7;
   --text-secondary: rgba(245, 245, 247, 0.6);
   --text-tertiary: rgba(245, 245, 247, 0.35);
+
+  /* Admin deliberately keeps a pure-white accent instead of web/policy's softer
+     #d0d0d0 / --accent-ink pairing. Admin's accent drives solid actionable UI — primary
+     buttons, the active nav-item rail, focus rings — where maximum contrast is a genuine
+     usability win; policy's softer accent is a marketing-page aesthetic choice that doesn't
+     apply here. Do not soften this to match policy. */
   --accent-mono: #ffffff;
+  /* Text/icon color painted on top of --accent-mono-filled surfaces (buttons, etc). */
+  --accent-mono-ink: #08080a;
+  --accent-mono-hover: #e5e5e7;
   --accent-danger: #ff453a;
+
+  /* Success/danger badge colors, split out from components.css so light mode (below) can
+     supply readable variants instead of leaving pastel colors baked in at low contrast. */
+  --badge-success-color: #7ee29a;
+  --badge-success-border: rgba(126, 226, 154, 0.4);
+  --badge-danger-color: var(--accent-danger);
+  --badge-danger-border: rgba(255, 69, 58, 0.4);
+
+  /* Spotlight highlight + card drop shadow, shared by the .glass-card recipe and the
+     cursor-tracked spotlight pseudo-element (see components.css). */
+  --glass-highlight: rgba(255, 255, 255, 0.5);
+  --glass-shadow: rgba(0, 0, 0, 0.6);
+
+  /* Ambient background orbs/beams + grain overlay (see base.css .atmosphere/.beam). */
+  --orb-a: rgba(255, 255, 255, 0.09);
+  --orb-b: rgba(255, 255, 255, 0.055);
+  --grain-opacity: 0.05;
+
+  /* Chart line-fill gradient stops (ChartLine.tsx) — kept as tokens rather than inline
+     literals so the fill reacts correctly to theme changes. */
+  --chart-fill-strong: rgba(255, 255, 255, 0.16);
+  --chart-fill-transparent: rgba(255, 255, 255, 0);
 
   /* Blur depth: cards -> modals -> toasts/dropdowns, growing alpha as the layer gets "closer". */
   --blur-card: 16px;
@@ -17,7 +54,7 @@
   --blur-float: 40px;
 
   /* Radii deliberately differ by hierarchy, not "everywhere the same". */
-  --radius-sm: 8px;
+  --radius-sm: 10px;
   --radius-md: 14px;
   --radius-lg: 20px;
 
@@ -32,6 +69,91 @@
   --sidebar-width: 240px;
   --sidebar-width-collapsed: 72px;
   --topbar-height: 64px;
+
+  color-scheme: dark;
+}
+
+/* ---------- Light theme ---------- */
+/* Two mechanisms, mirroring web/policy exactly: an explicit data-theme attribute (set by the
+   Topbar toggle + persisted to localStorage under a distinct "vexel-admin-theme" key, see
+   src/lib/theme.ts) takes priority, with a prefers-color-scheme fallback below for users who
+   haven't toggled yet. */
+:root[data-theme="light"] {
+  --bg-canvas: #f2f2f2;
+  --bg-elevated: #e7e7e7;
+  --surface-glass: rgba(10, 10, 10, 0.045);
+  --surface-glass-hover: rgba(10, 10, 10, 0.075);
+  --surface-glass-modal: rgba(10, 10, 10, 0.09);
+  --surface-glass-border: rgba(10, 10, 10, 0.12);
+  --surface-topbar: rgba(242, 242, 242, 0.6);
+  --text-primary: #0a0a0a;
+  --text-secondary: rgba(10, 10, 10, 0.64);
+  --text-tertiary: rgba(10, 10, 10, 0.4);
+
+  /* --accent-mono flips to a near-black here — the same "maximum contrast against its own
+     background" rationale as the dark theme above, just inverted for a light canvas. Pure
+     white would be invisible on a light background (buttons, focus rings, the active nav
+     rail would all disappear), so this is a required light-mode value, not an inconsistency
+     with the "keep --accent-mono pure white" note in the dark block above (that note is
+     about not softening the *dark-theme* value to match policy's #d0d0d0). */
+  --accent-mono: #0a0a0a;
+  --accent-mono-ink: #f2f2f2;
+  --accent-mono-hover: #262626;
+  --accent-danger: #ff453a;
+
+  --badge-success-color: #1f7a43;
+  --badge-success-border: rgba(31, 122, 67, 0.35);
+  --badge-danger-color: var(--accent-danger);
+  --badge-danger-border: rgba(255, 69, 58, 0.35);
+
+  --glass-highlight: rgba(255, 255, 255, 0.75);
+  --glass-shadow: rgba(10, 10, 10, 0.16);
+
+  --orb-a: rgba(10, 10, 10, 0.06);
+  --orb-b: rgba(10, 10, 10, 0.04);
+  --grain-opacity: 0.035;
+
+  --chart-fill-strong: rgba(10, 10, 10, 0.14);
+  --chart-fill-transparent: rgba(10, 10, 10, 0);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg-canvas: #f2f2f2;
+    --bg-elevated: #e7e7e7;
+    --surface-glass: rgba(10, 10, 10, 0.045);
+    --surface-glass-hover: rgba(10, 10, 10, 0.075);
+    --surface-glass-modal: rgba(10, 10, 10, 0.09);
+    --surface-glass-border: rgba(10, 10, 10, 0.12);
+    --surface-topbar: rgba(242, 242, 242, 0.6);
+    --text-primary: #0a0a0a;
+    --text-secondary: rgba(10, 10, 10, 0.64);
+    --text-tertiary: rgba(10, 10, 10, 0.4);
+
+    --accent-mono: #0a0a0a;
+    --accent-mono-ink: #f2f2f2;
+    --accent-mono-hover: #262626;
+    --accent-danger: #ff453a;
+
+    --badge-success-color: #1f7a43;
+    --badge-success-border: rgba(31, 122, 67, 0.35);
+    --badge-danger-color: var(--accent-danger);
+    --badge-danger-border: rgba(255, 69, 58, 0.35);
+
+    --glass-highlight: rgba(255, 255, 255, 0.75);
+    --glass-shadow: rgba(10, 10, 10, 0.16);
+
+    --orb-a: rgba(10, 10, 10, 0.06);
+    --orb-b: rgba(10, 10, 10, 0.04);
+    --grain-opacity: 0.035;
+
+    --chart-fill-strong: rgba(10, 10, 10, 0.14);
+    --chart-fill-transparent: rgba(10, 10, 10, 0);
+
+    color-scheme: light;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

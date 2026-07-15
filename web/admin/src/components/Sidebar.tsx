@@ -46,8 +46,8 @@ export function Sidebar(props: { current: Route; open: boolean; onNavigate: () =
       {props.open && <div class="sidebar-backdrop" onClick={props.onNavigate} />}
       <nav class={`sidebar ${collapsed ? "collapsed" : ""} ${props.open ? "open" : ""}`}>
         <div class="sidebar-brand">
-          <div class="sidebar-brand-mark" />
-          {!collapsed && <span>Remnawave Admin</span>}
+          <img src="/logo.png" alt="Vexel VPN" class="sidebar-brand-mark" />
+          {!collapsed && <span>Vexel VPN</span>}
         </div>
         {NAV_GROUPS.map((group) => (
           <div class="sidebar-group" key={group.label}>

@@ -7,6 +7,8 @@ import "./styles/components.css";
 import { getToken, setUnauthorizedHandler } from "./api/client";
 import { login, initTelegramChrome } from "./auth/telegram";
 import { useRoute, type Route } from "./router";
+import { initSpotlight } from "./lib/spotlight";
+import { initTheme } from "./lib/theme";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { ToastProvider } from "./components/Toast";
@@ -117,6 +119,11 @@ function App() {
     </div>
   );
 }
+
+// Both are one-time, app-wide side effects — not per-route or per-component — so they run
+// once here rather than inside a component's useEffect.
+initTheme();
+initSpotlight();
 
 render(
   <ToastProvider>
