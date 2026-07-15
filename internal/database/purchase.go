@@ -405,6 +405,18 @@ func (pr *PurchaseRepository) RevenueByDay(ctx context.Context, days int) ([]Rev
 	return result, nil
 }
 
+// RevenueSince sums paid-purchase amounts with paid_at on/after the given timestamp — a single
+// scalar query (as opposed to RevenueByDay's per-day series), used by the admin header metrics
+// strip's trailing-30-day revenue approximation.
+func (pr *PurchaseRepository) RevenueSince(ctx context.Context, since time.Time) (float64, error) {
+	query := `SELECT COALESCE(SUM(amount), 0) FROM purchase WHERE status = 'paid' AND paid_at IS NOT NULL AND paid_at >= $1`
+	var total float64
+	if err := pr.pool.QueryRow(ctx, query, since).Scan(&total); err != nil {
+		return 0, fmt.Errorf("query revenue since: %w", err)
+	}
+	return total, nil
+}
+
 func (pr *PurchaseRepository) FindSuccessfulPaidPurchaseByCustomer(ctx context.Context, customerID int64) (*Purchase, error) {
 	query := sq.Select("*").
 		From("purchase").

@@ -106,6 +106,25 @@ export interface DashboardReferrals {
   conversionPercent: number;
 }
 
+export interface NotificationLogEntry {
+  id: number;
+  createdAt: string;
+  customerTelegramId: number;
+  customerUsername?: string;
+  notificationType: string;
+  status: string;
+  detail: string | null;
+  errorMessage: string | null;
+  source: string;
+}
+
+export interface NotificationStats {
+  sent: number;
+  failed: number;
+  skipped: number;
+  total: number;
+}
+
 export interface ActivityEvent {
   type: "signup" | "purchase" | "referral_bonus" | "admin_action" | "notification";
   timestamp: string;
@@ -162,4 +181,15 @@ export interface FixStrategyJobStatus {
     errors: string[];
   };
   error?: string;
+}
+
+// HeaderStats backs the Topbar's compact metrics strip. mrr30d is a trailing 30-day paid-revenue
+// approximation, not true recurring MRR (there's no per-customer recurring-amount tracking); and
+// expiringToday deliberately isn't called "churn" — expired-today customers may simply be about
+// to renew, which the data alone can't distinguish.
+export interface HeaderStats {
+  activeSubscriptions: number;
+  mrr30d: number;
+  mrrCurrency: string;
+  expiringToday: number;
 }

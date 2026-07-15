@@ -2,6 +2,8 @@ import { useEffect, useState } from "preact/hooks";
 import { api } from "../api/client";
 import type { DashboardHealth } from "../api/types";
 import { getCurrentTheme, toggleTheme, type Theme } from "../lib/theme";
+import { openCommandPalette } from "./CommandPalette";
+import { HeaderStats } from "./HeaderStats";
 
 function SunIcon() {
   return (
@@ -52,6 +54,15 @@ export function Topbar(props: { adminId: number | null; title: string; onMenuCli
         <span class="page-title" style={{ fontSize: 15 }}>{props.title}</span>
       </div>
       <div class="row">
+        <HeaderStats />
+        <button
+          class="btn btn-ghost btn-sm mono"
+          onClick={openCommandPalette}
+          aria-label="Быстрый поиск"
+          title="Быстрый поиск (⌘K)"
+        >
+          ⌘K
+        </button>
         <button
           class="btn btn-ghost theme-toggle-btn"
           onClick={() => setTheme(toggleTheme())}

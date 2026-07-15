@@ -12,6 +12,7 @@ import { initTheme } from "./lib/theme";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { ToastProvider } from "./components/Toast";
+import { CommandPalette } from "./components/CommandPalette";
 
 import { Dashboard } from "./routes/Dashboard";
 import { Users } from "./routes/Users";
@@ -22,6 +23,7 @@ import { Referrals } from "./routes/Referrals";
 import { Webhooks } from "./routes/Webhooks";
 import { AuditLog } from "./routes/AuditLog";
 import { Activity } from "./routes/Activity";
+import { Notifications } from "./routes/Notifications";
 import { System } from "./routes/System";
 
 const TITLES: Record<Route["name"], string> = {
@@ -34,6 +36,7 @@ const TITLES: Record<Route["name"], string> = {
   webhooks: "Вебхуки",
   audit: "Аудит-лог",
   activity: "Активность",
+  notifications: "Уведомления",
   system: "Система",
 };
 
@@ -57,6 +60,8 @@ function RouteView({ route }: { route: Route }) {
       return <AuditLog />;
     case "activity":
       return <Activity />;
+    case "notifications":
+      return <Notifications />;
     case "system":
       return <System />;
   }
@@ -116,6 +121,7 @@ function App() {
           <RouteView route={route} />
         </div>
       </div>
+      <CommandPalette />
     </div>
   );
 }

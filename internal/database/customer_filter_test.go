@@ -16,7 +16,7 @@ func TestCustomerFilterWhereSQL(t *testing.T) {
 		{name: "expired filter", filter: "expired", wantClause: "expire_at"},
 		{name: "no_sub filter", filter: "no_sub", wantClause: "expire_at"},
 		{name: "numeric search", search: "12345", wantClause: "telegram_id"},
-		{name: "non-numeric search ignored", search: "not-a-number", wantEmpty: true},
+		{name: "non-numeric search matches username ILIKE", search: "not-a-number", wantClause: "username"},
 	}
 
 	for _, tt := range tests {
