@@ -2,10 +2,12 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
@@ -139,4 +141,47 @@ func (r *NotificationLogRepository) FindAllPaginated(ctx context.Context, filter
 		return nil, 0, fmt.Errorf("error iterating notification log rows: %w", rows.Err())
 	}
 	return list, total, nil
+}
+
+// FindByID looks up a single notification_log row, used by the admin resend action to recover
+// the notification type before dispatching. Returns (nil, nil) when not found.
+func (r *NotificationLogRepository) FindByID(ctx context.Context, id int64) (*NotificationLog, error) {
+	query := `SELECT id, created_at, customer_telegram_id, notification_type, status, detail, error_message, source
+		FROM notification_log WHERE id = $1`
+	var l NotificationLog
+	err := r.pool.QueryRow(ctx, query, id).Scan(&l.ID, &l.CreatedAt, &l.CustomerTelegramID, &l.NotificationType, &l.Status, &l.Detail, &l.ErrorMessage, &l.Source)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find notification log by id: %w", err)
+	}
+	return &l, nil
+}
+
+// CountByStatus returns a status -> count map (sent/failed/skipped/...) for notification_log rows
+// created since the given timestamp, powering the admin delivery-rate stat cards. Uses a
+// parameterized timestamp bound rather than a string-built interval, so there's no interval
+// syntax to validate/escape.
+func (r *NotificationLogRepository) CountByStatus(ctx context.Context, since time.Time) (map[string]int64, error) {
+	query := `SELECT status, COUNT(*) FROM notification_log WHERE created_at >= $1 GROUP BY status`
+	rows, err := r.pool.Query(ctx, query, since)
+	if err != nil {
+		return nil, fmt.Errorf("count notification log by status: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int64)
+	for rows.Next() {
+		var status string
+		var count int64
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("scan notification log status count row: %w", err)
+		}
+		counts[status] = count
+	}
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("error iterating notification log status count rows: %w", rows.Err())
+	}
+	return counts, nil
 }

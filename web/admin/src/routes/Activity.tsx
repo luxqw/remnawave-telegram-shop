@@ -31,6 +31,14 @@ export function Activity() {
     api.get<Page<ActivityEvent>>(`/admin/api/activity?${params.toString()}`).then(setPage);
   }, [pageNum, type, from, to]);
 
+  const exportUrl = () => {
+    const params = new URLSearchParams();
+    if (type) params.set("type", type);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    return `/admin/api/activity/export.csv?${params.toString()}`;
+  };
+
   const columns: Column<ActivityEvent>[] = [
     {
       header: "Дата",
@@ -74,6 +82,8 @@ export function Activity() {
           onInput={(e) => { setTo((e.target as HTMLInputElement).value); setPageNum(1); }}
           style={{ maxWidth: 160 }}
         />
+        <div class="spacer" />
+        <a class="btn btn-sm" href={exportUrl()} target="_blank" rel="noreferrer">Экспорт CSV</a>
       </div>
       <GlassCard>
         {!page ? (

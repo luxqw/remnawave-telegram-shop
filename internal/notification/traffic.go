@@ -137,6 +137,61 @@ func (s *TrafficWarningService) CheckAndNotify() error {
 	return nil
 }
 
+// ResendForCustomer manually resends a traffic warning to a single customer, mirroring the send
+// logic in CheckAndNotify's loop body but bypassing alreadyWarnedThisPeriod — this is an explicit
+// admin-triggered resend, so the once-per-reset-period dedup guard shouldn't block it. Still
+// requires the customer to actually be over the 90% threshold right now (re-fetched live from
+// Remnawave), so it can't be used to send a bogus warning to someone under their limit.
+func (s *TrafficWarningService) ResendForCustomer(ctx context.Context, customer database.Customer) error {
+	if customer.ExpireAt == nil || customer.ExpireAt.Before(time.Now()) {
+		return fmt.Errorf("traffic warning resend: customer %d has no active subscription", customer.TelegramID)
+	}
+
+	rwUsers, err := s.remnawaveClient.GetUsersByTelegramID(ctx, customer.TelegramID)
+	if err != nil {
+		return fmt.Errorf("traffic warning resend: fetch remnawave user: %w", err)
+	}
+	if len(rwUsers) == 0 {
+		return fmt.Errorf("traffic warning resend: customer %d not found in remnawave", customer.TelegramID)
+	}
+	u := rwUsers[0]
+
+	if u.TrafficLimitBytes == 0 || u.UserTraffic == nil {
+		return fmt.Errorf("traffic warning resend: customer %d has no traffic limit/usage data", customer.TelegramID)
+	}
+
+	usedPct := float64(u.UserTraffic.UsedTrafficBytes) / float64(u.TrafficLimitBytes)
+	usedPctDetail := fmt.Sprintf("%.1f%%", usedPct*100)
+
+	if usedPct < 0.9 {
+		return fmt.Errorf("traffic warning resend: customer %d is now under the 90%% threshold (%s), refusing to send a stale warning", customer.TelegramID, usedPctDetail)
+	}
+
+	remainingGB := float64(u.TrafficLimitBytes-u.UserTraffic.UsedTrafficBytes) / float64(config.BytesInGigabyte())
+	totalGB := float64(u.TrafficLimitBytes) / float64(config.BytesInGigabyte())
+	text := fmt.Sprintf(s.tm.GetText(customer.Language, "traffic_warning"), remainingGB, totalGB)
+
+	var rows [][]models.InlineKeyboardButton
+	if config.TopupEnabled() {
+		rows = append(rows, []models.InlineKeyboardButton{s.tm.GetButton(customer.Language, "topup_button").InlineCallback("topup")})
+	}
+
+	_, err = s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: customer.TelegramID, Text: text, ParseMode: models.ParseModeHTML,
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows},
+	})
+	if err != nil {
+		s.logNotification(ctx, customer.TelegramID, "failed", usedPctDetail, err)
+		return fmt.Errorf("traffic warning resend: send message: %w", err)
+	}
+	s.logNotification(ctx, customer.TelegramID, "sent", usedPctDetail, nil)
+
+	_ = s.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{
+		"last_traffic_warning_at": time.Now(),
+	})
+	return nil
+}
+
 // alreadyWarnedThisPeriod returns true if a warning was already sent since the last traffic reset.
 func alreadyWarnedThisPeriod(customer database.Customer, u remnawave.User) bool {
 	if customer.LastTrafficWarningAt == nil {

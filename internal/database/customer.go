@@ -318,9 +318,22 @@ func (cr *CustomerRepository) CountStats(ctx context.Context) (CustomerStats, er
 	return s, nil
 }
 
+// CountExpiringToday counts customers whose subscription expires today (server-local date), for
+// the admin header metrics strip. Deliberately not called "churn": a customer expiring today may
+// simply be about to renew — the schema has no way to distinguish that from an actual lapse.
+func (cr *CustomerRepository) CountExpiringToday(ctx context.Context) (int64, error) {
+	query := `SELECT COUNT(*) FROM customer WHERE expire_at::date = CURRENT_DATE`
+	var count int64
+	if err := cr.pool.QueryRow(ctx, query).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count customers expiring today: %w", err)
+	}
+	return count, nil
+}
+
 // customerFilterWhere builds the shared WHERE clause for FindAllPaginated. filter narrows by
-// subscription state, search matches an exact telegram_id (non-numeric search terms are ignored,
-// matching how the bot's /admin_user lookup works today). Returns nil when neither is set.
+// subscription state; search matches either an exact telegram_id (when it parses as an integer)
+// or a case-insensitive substring of username — this also backs the admin Cmd-K quick search,
+// which needs to find a customer by partial username, not just by exact ID.
 func customerFilterWhere(filter, search string) sq.And {
 	var conds sq.And
 	switch filter {
@@ -333,8 +346,13 @@ func customerFilterWhere(filter, search string) sq.And {
 	case "no_sub":
 		conds = append(conds, sq.Eq{"expire_at": nil})
 	}
-	if id, err := strconv.ParseInt(search, 10, 64); err == nil && search != "" {
-		conds = append(conds, sq.Eq{"telegram_id": id})
+	if search != "" {
+		usernameMatch := sq.ILike{"username": "%" + search + "%"}
+		if id, err := strconv.ParseInt(search, 10, 64); err == nil {
+			conds = append(conds, sq.Or{sq.Eq{"telegram_id": id}, usernameMatch})
+		} else {
+			conds = append(conds, usernameMatch)
+		}
 	}
 	return conds
 }

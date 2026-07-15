@@ -221,7 +221,8 @@ func main() {
 	if config.IsAdminWebAppEnabled() {
 		webappHandler := webapp.NewHandler(
 			customerRepository, purchaseRepository, referralRepository, auditLogRepository,
-			webhookInboxRepository, activityRepository, remnawaveClient, tributeClient, opsService, pool,
+			webhookInboxRepository, activityRepository, notificationLogRepository, remnawaveClient, tributeClient, opsService,
+			subService, trafficSvc, pool,
 			webapp.BuildInfo{Version: Version, Commit: Commit, BuildDate: BuildDate},
 		)
 		mux.Handle("/admin/", webappHandler)

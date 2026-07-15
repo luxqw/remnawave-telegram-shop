@@ -13,6 +13,7 @@ export type Route =
   | { name: "webhooks" }
   | { name: "audit" }
   | { name: "activity" }
+  | { name: "notifications" }
   | { name: "system" };
 
 function parseHash(hash: string): Route {
@@ -31,6 +32,7 @@ function parseHash(hash: string): Route {
   if (segments[0] === "webhooks") return { name: "webhooks" };
   if (segments[0] === "audit") return { name: "audit" };
   if (segments[0] === "activity") return { name: "activity" };
+  if (segments[0] === "notifications") return { name: "notifications" };
   if (segments[0] === "system") return { name: "system" };
   return { name: "dashboard" };
 }

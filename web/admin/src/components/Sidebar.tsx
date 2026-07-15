@@ -26,6 +26,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Активность",
     items: [
       { route: "activity", label: "Активность", icon: "◔", match: ["activity"] },
+      { route: "notifications", label: "Уведомления", icon: "◑", match: ["notifications"] },
       { route: "audit", label: "Аудит-лог", icon: "▥", match: ["audit"] },
     ],
   },

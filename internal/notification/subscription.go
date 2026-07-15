@@ -183,6 +183,23 @@ func (s *SubscriptionService) sendTrialExpiringNotification(ctx context.Context,
 	return err
 }
 
+// ResendNotification dispatches a manual admin-triggered resend for one customer, reusing the
+// same send paths ProcessSubscriptionExpiration uses (which already write their own
+// notification_log row on completion — callers must not log a second row). Only
+// "trial_expiring" and "subscription_expiring" are supported here; other notification types
+// (traffic_warning lives on TrafficWarningService, broadcast/admin_message have no stored
+// message text to resend) are the caller's responsibility to reject before calling this.
+func (s *SubscriptionService) ResendNotification(ctx context.Context, customer database.Customer, notificationType string) error {
+	switch notificationType {
+	case "trial_expiring":
+		return s.sendTrialExpiringNotification(ctx, customer)
+	case "subscription_expiring":
+		return s.sendNotification(ctx, customer)
+	default:
+		return fmt.Errorf("resend not supported for notification type %q", notificationType)
+	}
+}
+
 func (s *SubscriptionService) sendNotification(ctx context.Context, customer database.Customer) error {
 	expireDate := customer.ExpireAt.Format("02.01.2006")
 	messageText := fmt.Sprintf(s.tm.GetText(customer.Language, "subscription_expiring"), expireDate)

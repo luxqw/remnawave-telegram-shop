@@ -121,6 +121,45 @@ func (h *Handler) handleDashboardReferrals(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, resp)
 }
 
+type headerStatsResponse struct {
+	ActiveSubscriptions int64   `json:"activeSubscriptions"`
+	MRR30d              float64 `json:"mrr30d"`
+	MRRCurrency         string  `json:"mrrCurrency"`
+	ExpiringToday       int64   `json:"expiringToday"`
+}
+
+// handleDashboardHeaderStats backs the Topbar's compact metrics strip: active subscriptions
+// (reuses CustomerRepository.CountStats — no duplicate SQL), a trailing-30-day paid-revenue
+// approximation labeled explicitly as such (not true recurring MRR — there's no per-customer
+// recurring-amount tracking to compute that from), and today's expiration count (deliberately not
+// labeled "churn" — see CountExpiringToday's doc comment).
+func (h *Handler) handleDashboardHeaderStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.customerRepository.CountStats(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	mrr, err := h.purchaseRepository.RevenueSince(r.Context(), time.Now().AddDate(0, 0, -30))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	expiringToday, err := h.customerRepository.CountExpiringToday(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, headerStatsResponse{
+		ActiveSubscriptions: stats.ActivePaid + stats.ActiveTrial,
+		MRR30d:              mrr,
+		MRRCurrency:         "RUB", // matches the single-currency assumption already baked into RevenueByDay/the dashboard revenue chart
+		ExpiringToday:       expiringToday,
+	})
+}
+
 type dashboardHealthResponse struct {
 	Status    string `json:"status"`
 	DB        string `json:"db"`

@@ -14,6 +14,7 @@ import (
 
 	"remnawave-tg-shop-bot/internal/adminops"
 	"remnawave-tg-shop-bot/internal/database"
+	"remnawave-tg-shop-bot/internal/notification"
 	"remnawave-tg-shop-bot/internal/remnawave"
 	"remnawave-tg-shop-bot/internal/tribute"
 )
@@ -29,17 +30,20 @@ type BuildInfo struct {
 // Handler owns every dependency the admin web API needs. Constructed once in main.go from the
 // same repository/service instances the bot handlers use.
 type Handler struct {
-	customerRepository     *database.CustomerRepository
-	purchaseRepository     *database.PurchaseRepository
-	referralRepository     *database.ReferralRepository
-	auditLogRepository     *database.AdminAuditLogRepository
-	webhookInboxRepository *database.WebhookInboxRepository
-	activityRepository     *database.ActivityRepository
-	remnawaveClient        *remnawave.Client
-	tributeClient          *tribute.Client // nil when Tribute webhooks are disabled
-	ops                    *adminops.Service
-	pool                   *pgxpool.Pool
-	build                  BuildInfo
+	customerRepository        *database.CustomerRepository
+	purchaseRepository        *database.PurchaseRepository
+	referralRepository        *database.ReferralRepository
+	auditLogRepository        *database.AdminAuditLogRepository
+	webhookInboxRepository    *database.WebhookInboxRepository
+	activityRepository        *database.ActivityRepository
+	notificationLogRepository *database.NotificationLogRepository
+	remnawaveClient           *remnawave.Client
+	tributeClient             *tribute.Client // nil when Tribute webhooks are disabled
+	ops                       *adminops.Service
+	subscriptionService       *notification.SubscriptionService
+	trafficWarningService     *notification.TrafficWarningService
+	pool                      *pgxpool.Pool
+	build                     BuildInfo
 
 	loginLimiter *rateLimiter
 
@@ -60,25 +64,31 @@ func NewHandler(
 	auditLogRepository *database.AdminAuditLogRepository,
 	webhookInboxRepository *database.WebhookInboxRepository,
 	activityRepository *database.ActivityRepository,
+	notificationLogRepository *database.NotificationLogRepository,
 	remnawaveClient *remnawave.Client,
 	tributeClient *tribute.Client,
 	ops *adminops.Service,
+	subscriptionService *notification.SubscriptionService,
+	trafficWarningService *notification.TrafficWarningService,
 	pool *pgxpool.Pool,
 	build BuildInfo,
 ) *Handler {
 	h := &Handler{
-		customerRepository:     customerRepository,
-		purchaseRepository:     purchaseRepository,
-		referralRepository:     referralRepository,
-		auditLogRepository:     auditLogRepository,
-		webhookInboxRepository: webhookInboxRepository,
-		activityRepository:     activityRepository,
-		remnawaveClient:        remnawaveClient,
-		tributeClient:          tributeClient,
-		ops:                    ops,
-		pool:                   pool,
-		build:                  build,
-		loginLimiter:           newRateLimiter(10, time.Minute),
+		customerRepository:        customerRepository,
+		purchaseRepository:        purchaseRepository,
+		referralRepository:        referralRepository,
+		auditLogRepository:        auditLogRepository,
+		webhookInboxRepository:    webhookInboxRepository,
+		activityRepository:        activityRepository,
+		notificationLogRepository: notificationLogRepository,
+		remnawaveClient:           remnawaveClient,
+		tributeClient:             tributeClient,
+		ops:                       ops,
+		subscriptionService:       subscriptionService,
+		trafficWarningService:     trafficWarningService,
+		pool:                      pool,
+		build:                     build,
+		loginLimiter:              newRateLimiter(10, time.Minute),
 	}
 	h.mux = withLogging(withCSP(h.routes()))
 	return h
@@ -103,9 +113,16 @@ func (h *Handler) routes() http.Handler {
 	mux.HandleFunc("GET /admin/api/dashboard/referrals", h.requireAdminSession(h.handleDashboardReferrals))
 	mux.HandleFunc("GET /admin/api/dashboard/health", h.requireAdminSession(h.handleDashboardHealth))
 	mux.HandleFunc("GET /admin/api/dashboard/activity", h.requireAdminSession(h.handleDashboardActivity))
+	mux.HandleFunc("GET /admin/api/dashboard/header-stats", h.requireAdminSession(h.handleDashboardHeaderStats))
 
 	// Activity feed (full paginated/filterable page, distinct from the dashboard widget above)
 	mux.HandleFunc("GET /admin/api/activity", h.requireAdminSession(h.handleActivityList))
+	mux.HandleFunc("GET /admin/api/activity/export.csv", h.requireAdminSession(h.handleActivityExportCSV))
+
+	// Notification log (raw notification_log rows, distinct from the merged activity feed)
+	mux.HandleFunc("GET /admin/api/notifications", h.requireAdminSession(h.handleNotificationList))
+	mux.HandleFunc("GET /admin/api/notifications/stats", h.requireAdminSession(h.handleNotificationStats))
+	mux.HandleFunc("POST /admin/api/notifications/{id}/resend", h.requireAdminSession(h.handleNotificationResend))
 
 	// Users
 	mux.HandleFunc("GET /admin/api/users", h.requireAdminSession(h.handleUsersList))
