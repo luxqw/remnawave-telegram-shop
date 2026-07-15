@@ -1,23 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
-import type { ComponentChildren } from "preact";
 import { api } from "../api/client";
 import type { ActivityEvent } from "../api/types";
 import { GlassCard } from "./GlassCard";
-import { TelegramUserLink } from "./TelegramUserLink";
-
-const TYPE_META: Record<ActivityEvent["type"], { icon: string; label: (e: ActivityEvent) => ComponentChildren }> = {
-  signup: { icon: "◍", label: (e) => <>Регистрация: <TelegramUserLink id={e.targetId} username={e.targetUsername} /></> },
-  purchase: { icon: "💰", label: (e) => <>Оплата {e.detail} от <TelegramUserLink id={e.targetId} username={e.targetUsername} /></> },
-  referral_bonus: {
-    icon: "🎁",
-    label: (e) => (
-      <>
-        Реферальный бонус: <TelegramUserLink id={e.actorId} username={e.actorUsername} /> → <TelegramUserLink id={e.targetId} username={e.targetUsername} />
-      </>
-    ),
-  },
-  admin_action: { icon: "🛠", label: (e) => <>{e.detail} · пользователь <TelegramUserLink id={e.targetId} username={e.targetUsername} /></> },
-};
+import { TYPE_META } from "../lib/activityMeta";
 
 export function ActivityFeed() {
   const [events, setEvents] = useState<ActivityEvent[] | null>(null);

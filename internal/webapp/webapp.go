@@ -104,6 +104,9 @@ func (h *Handler) routes() http.Handler {
 	mux.HandleFunc("GET /admin/api/dashboard/health", h.requireAdminSession(h.handleDashboardHealth))
 	mux.HandleFunc("GET /admin/api/dashboard/activity", h.requireAdminSession(h.handleDashboardActivity))
 
+	// Activity feed (full paginated/filterable page, distinct from the dashboard widget above)
+	mux.HandleFunc("GET /admin/api/activity", h.requireAdminSession(h.handleActivityList))
+
 	// Users
 	mux.HandleFunc("GET /admin/api/users", h.requireAdminSession(h.handleUsersList))
 	mux.HandleFunc("GET /admin/api/users/{id}", h.requireAdminSession(h.handleUserDetail))
@@ -145,6 +148,7 @@ func (h *Handler) routes() http.Handler {
 
 	// Webhook inbox
 	mux.HandleFunc("GET /admin/api/webhooks", h.requireAdminSession(h.handleWebhooksList))
+	mux.HandleFunc("GET /admin/api/webhooks/{id}", h.requireAdminSession(h.handleWebhookDetail))
 	mux.HandleFunc("POST /admin/api/webhooks/{id}/retry", h.requireAdminSession(h.handleWebhookRetry))
 
 	// SPA (must be registered last / least specific — Go's ServeMux picks the most specific

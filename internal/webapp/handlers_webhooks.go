@@ -24,6 +24,13 @@ func toWebhookInboxDTO(wh database.WebhookInbox) webhookInboxDTO {
 	}
 }
 
+// webhookInboxDetailDTO extends the list DTO with the raw payload — omitted from the list
+// response to keep pages light, but shown in the admin UI's detail modal.
+type webhookInboxDetailDTO struct {
+	webhookInboxDTO
+	Payload string `json:"payload"`
+}
+
 func (h *Handler) handleWebhooksList(w http.ResponseWriter, r *http.Request) {
 	limit, offset, page := pagination(r)
 	status := r.URL.Query().Get("status")
@@ -38,6 +45,25 @@ func (h *Handler) handleWebhooksList(w http.ResponseWriter, r *http.Request) {
 		dtos = append(dtos, toWebhookInboxDTO(wh))
 	}
 	writeJSON(w, http.StatusOK, Page[webhookInboxDTO]{Items: dtos, Total: total, Page: page, Limit: limit})
+}
+
+// handleWebhookDetail returns a single webhook inbox row including its raw payload, backing the
+// admin UI's row-click detail modal.
+func (h *Handler) handleWebhookDetail(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathInt64(w, r, "id")
+	if !ok {
+		return
+	}
+	wh, err := h.webhookInboxRepository.FindByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if wh == nil {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, webhookInboxDetailDTO{webhookInboxDTO: toWebhookInboxDTO(*wh), Payload: string(wh.Payload)})
 }
 
 // handleWebhookRetry re-dispatches a single failed webhook via tribute.Client.RetryByID. Returns

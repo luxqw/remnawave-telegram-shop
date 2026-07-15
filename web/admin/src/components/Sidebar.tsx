@@ -2,15 +2,40 @@ import { useState } from "preact/hooks";
 import type { Route } from "../router";
 import { navigate } from "../router";
 
-const NAV_ITEMS: { route: string; label: string; icon: string; match: Route["name"][] }[] = [
-  { route: "dashboard", label: "Дашборд", icon: "◧", match: ["dashboard"] },
-  { route: "users", label: "Пользователи", icon: "◍", match: ["users", "user-detail"] },
-  { route: "orders", label: "Заказы", icon: "▤", match: ["orders"] },
-  { route: "broadcast", label: "Рассылка", icon: "◎", match: ["broadcast"] },
-  { route: "referrals", label: "Рефералы", icon: "◐", match: ["referrals"] },
-  { route: "webhooks", label: "Вебхуки", icon: "◫", match: ["webhooks"] },
-  { route: "audit", label: "Аудит-лог", icon: "▥", match: ["audit"] },
-  { route: "system", label: "Система", icon: "◈", match: ["system"] },
+type NavItem = { route: string; label: string; icon: string; match: Route["name"][] };
+type NavGroup = { label: string; items: NavItem[] };
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Обзор",
+    items: [{ route: "dashboard", label: "Дашборд", icon: "◧", match: ["dashboard"] }],
+  },
+  {
+    label: "Пользователи",
+    items: [{ route: "users", label: "Пользователи", icon: "◍", match: ["users", "user-detail"] }],
+  },
+  {
+    label: "Коммерция",
+    items: [
+      { route: "orders", label: "Заказы", icon: "▤", match: ["orders"] },
+      { route: "broadcast", label: "Рассылка", icon: "◎", match: ["broadcast"] },
+      { route: "referrals", label: "Рефералы", icon: "◐", match: ["referrals"] },
+    ],
+  },
+  {
+    label: "Активность",
+    items: [
+      { route: "activity", label: "Активность", icon: "◔", match: ["activity"] },
+      { route: "audit", label: "Аудит-лог", icon: "▥", match: ["audit"] },
+    ],
+  },
+  {
+    label: "Система",
+    items: [
+      { route: "webhooks", label: "Вебхуки", icon: "◫", match: ["webhooks"] },
+      { route: "system", label: "Система", icon: "◈", match: ["system"] },
+    ],
+  },
 ];
 
 export function Sidebar(props: { current: Route; open: boolean; onNavigate: () => void }) {
@@ -24,20 +49,25 @@ export function Sidebar(props: { current: Route; open: boolean; onNavigate: () =
           <div class="sidebar-brand-mark" />
           {!collapsed && <span>Remnawave Admin</span>}
         </div>
-        {NAV_ITEMS.map((item) => (
-          <a
-            key={item.route}
-            class={`nav-item ${item.match.includes(props.current.name) ? "active" : ""}`}
-            onClick={(e) => {
-              e.preventDefault();
-              navigate(item.route);
-              props.onNavigate();
-            }}
-            href={`#/${item.route}`}
-          >
-            <span class="nav-item-icon">{item.icon}</span>
-            {!collapsed && <span>{item.label}</span>}
-          </a>
+        {NAV_GROUPS.map((group) => (
+          <div class="sidebar-group" key={group.label}>
+            {!collapsed && <div class="sidebar-group-label">{group.label}</div>}
+            {group.items.map((item) => (
+              <a
+                key={item.route}
+                class={`nav-item ${item.match.includes(props.current.name) ? "active" : ""}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate(item.route);
+                  props.onNavigate();
+                }}
+                href={`#/${item.route}`}
+              >
+                <span class="nav-item-icon">{item.icon}</span>
+                {!collapsed && <span>{item.label}</span>}
+              </a>
+            ))}
+          </div>
         ))}
         <button
           class="sidebar-toggle"

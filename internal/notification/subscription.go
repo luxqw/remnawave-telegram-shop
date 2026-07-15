@@ -26,22 +26,46 @@ type paymentProcessor interface {
 }
 
 type SubscriptionService struct {
-	customerRepository customerRepository
-	purchaseRepository tributeRepository
-	paymentService     paymentProcessor
-	telegramBot        *bot.Bot
-	tm                 *translation.Manager
-	notify             func(context.Context, database.Customer) error
+	customerRepository        customerRepository
+	purchaseRepository        tributeRepository
+	paymentService            paymentProcessor
+	telegramBot               *bot.Bot
+	tm                        *translation.Manager
+	notificationLogRepository *database.NotificationLogRepository
+	notify                    func(context.Context, database.Customer) error
 }
 
 func NewSubscriptionService(customerRepository customerRepository,
 	purchaseRepository tributeRepository,
 	paymentService paymentProcessor,
 	telegramBot *bot.Bot,
-	tm *translation.Manager) *SubscriptionService {
-	svc := &SubscriptionService{customerRepository: customerRepository, purchaseRepository: purchaseRepository, paymentService: paymentService, telegramBot: telegramBot, tm: tm}
+	tm *translation.Manager,
+	notificationLogRepository *database.NotificationLogRepository) *SubscriptionService {
+	svc := &SubscriptionService{customerRepository: customerRepository, purchaseRepository: purchaseRepository, paymentService: paymentService, telegramBot: telegramBot, tm: tm, notificationLogRepository: notificationLogRepository}
 	svc.notify = svc.sendNotification
 	return svc
+}
+
+// logNotification writes a best-effort notification_log row. A failure to write must never block
+// or fail the actual notification send — only logged via slog.Error, never returned.
+func (s *SubscriptionService) logNotification(ctx context.Context, customer database.Customer, notificationType, status string, sendErr error) {
+	if s.notificationLogRepository == nil {
+		return
+	}
+	var errMsg *string
+	if sendErr != nil {
+		m := sendErr.Error()
+		errMsg = &m
+	}
+	if err := s.notificationLogRepository.Create(ctx, database.NotificationLog{
+		CustomerTelegramID: customer.TelegramID,
+		NotificationType:   notificationType,
+		Status:             status,
+		ErrorMessage:       errMsg,
+		Source:             "system",
+	}); err != nil {
+		slog.Error("notification: write notification_log", "notification_type", notificationType, "customer_id", customer.TelegramID, "error", err)
+	}
 }
 
 func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
@@ -151,6 +175,11 @@ func (s *SubscriptionService) sendTrialExpiringNotification(ctx context.Context,
 			},
 		},
 	})
+	if err != nil {
+		s.logNotification(ctx, customer, "trial_expiring", "failed", err)
+	} else {
+		s.logNotification(ctx, customer, "trial_expiring", "sent", nil)
+	}
 	return err
 }
 
@@ -167,5 +196,10 @@ func (s *SubscriptionService) sendNotification(ctx context.Context, customer dat
 			},
 		},
 	})
+	if err != nil {
+		s.logNotification(ctx, customer, "subscription_expiring", "failed", err)
+	} else {
+		s.logNotification(ctx, customer, "subscription_expiring", "sent", nil)
+	}
 	return err
 }

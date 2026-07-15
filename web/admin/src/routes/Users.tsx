@@ -23,6 +23,14 @@ function statusBadge(c: Customer) {
   return <Badge variant="success">{c.isTrial ? "Триал" : "Активна"}</Badge>;
 }
 
+// Rank used for sortable "Статус" column — plain text sort wouldn't reflect a meaningful order.
+function statusRank(c: Customer): string {
+  if (!c.expireAt) return "0_no_sub";
+  const expired = new Date(c.expireAt).getTime() < Date.now();
+  if (expired) return "1_expired";
+  return c.isTrial ? "2_trial" : "3_active";
+}
+
 export function Users() {
   const [page, setPage] = useState<Page<Customer> | null>(null);
   const [pageNum, setPageNum] = useState(1);
@@ -42,11 +50,26 @@ export function Users() {
   }, [pageNum, filter, search]);
 
   const columns: Column<Customer>[] = [
-    { header: "Telegram ID", render: (c) => <TelegramUserLink id={c.telegramId} username={c.username} /> },
-    { header: "Статус", render: statusBadge },
-    { header: "Истекает", render: (c) => (c.expireAt ? new Date(c.expireAt).toLocaleDateString("ru-RU") : "—") },
-    { header: "Язык", render: (c) => c.language },
-    { header: "Регистрация", render: (c) => new Date(c.createdAt).toLocaleDateString("ru-RU") },
+    {
+      header: "Telegram ID",
+      render: (c) => <TelegramUserLink id={c.telegramId} username={c.username} />,
+      sortKey: "telegramId",
+      sortValue: (c) => c.telegramId,
+    },
+    { header: "Статус", render: statusBadge, sortKey: "status", sortValue: statusRank },
+    {
+      header: "Истекает",
+      render: (c) => (c.expireAt ? new Date(c.expireAt).toLocaleDateString("ru-RU") : "—"),
+      sortKey: "expireAt",
+      sortValue: (c) => (c.expireAt ? new Date(c.expireAt).getTime() : null),
+    },
+    { header: "Язык", render: (c) => c.language, sortKey: "language", sortValue: (c) => c.language },
+    {
+      header: "Регистрация",
+      render: (c) => new Date(c.createdAt).toLocaleDateString("ru-RU"),
+      sortKey: "createdAt",
+      sortValue: (c) => new Date(c.createdAt).getTime(),
+    },
   ];
 
   return (

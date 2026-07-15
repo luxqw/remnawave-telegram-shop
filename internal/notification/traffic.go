@@ -16,10 +16,11 @@ import (
 )
 
 type TrafficWarningService struct {
-	customerRepository *database.CustomerRepository
-	remnawaveClient    *remnawave.Client
-	telegramBot        *bot.Bot
-	tm                 *translation.Manager
+	customerRepository        *database.CustomerRepository
+	remnawaveClient           *remnawave.Client
+	telegramBot               *bot.Bot
+	tm                        *translation.Manager
+	notificationLogRepository *database.NotificationLogRepository
 }
 
 func NewTrafficWarningService(
@@ -27,8 +28,36 @@ func NewTrafficWarningService(
 	remnawaveClient *remnawave.Client,
 	telegramBot *bot.Bot,
 	tm *translation.Manager,
+	notificationLogRepository *database.NotificationLogRepository,
 ) *TrafficWarningService {
-	return &TrafficWarningService{customerRepository: customerRepository, remnawaveClient: remnawaveClient, telegramBot: telegramBot, tm: tm}
+	return &TrafficWarningService{customerRepository: customerRepository, remnawaveClient: remnawaveClient, telegramBot: telegramBot, tm: tm, notificationLogRepository: notificationLogRepository}
+}
+
+// logNotification writes a best-effort notification_log row for a traffic warning. A failure to
+// write must never block or fail the actual check/send loop — only logged, never returned.
+func (s *TrafficWarningService) logNotification(ctx context.Context, telegramID int64, status, detail string, sendErr error) {
+	if s.notificationLogRepository == nil {
+		return
+	}
+	var errMsg *string
+	if sendErr != nil {
+		m := sendErr.Error()
+		errMsg = &m
+	}
+	var detailPtr *string
+	if detail != "" {
+		detailPtr = &detail
+	}
+	if err := s.notificationLogRepository.Create(ctx, database.NotificationLog{
+		CustomerTelegramID: telegramID,
+		NotificationType:   "traffic_warning",
+		Status:             status,
+		Detail:             detailPtr,
+		ErrorMessage:       errMsg,
+		Source:             "system",
+	}); err != nil {
+		slog.Error("notification: write notification_log", "notification_type", "traffic_warning", "customer_id", telegramID, "error", err)
+	}
 }
 
 // CheckAndNotify sends a low-traffic warning to users who have used >90% of their limit.
@@ -65,10 +94,13 @@ func (s *TrafficWarningService) CheckAndNotify() error {
 			continue
 		}
 
+		usedPctDetail := fmt.Sprintf("%.1f%%", usedPct*100)
+
 		// Deduplication: don't send if we already warned since the last traffic reset.
 		// If Remnawave provides lastTrafficResetAt, use it as the boundary.
 		// Otherwise fall back to checking if warning was sent in the last 30 days.
 		if alreadyWarnedThisPeriod(customer, u) {
+			s.logNotification(ctx, customer.TelegramID, "skipped", usedPctDetail, nil)
 			continue
 		}
 
@@ -87,8 +119,10 @@ func (s *TrafficWarningService) CheckAndNotify() error {
 		})
 		if err != nil {
 			slog.Warn("traffic warning: send failed", "telegram_id", customer.TelegramID, "error", err)
+			s.logNotification(ctx, customer.TelegramID, "failed", usedPctDetail, err)
 			continue
 		}
+		s.logNotification(ctx, customer.TelegramID, "sent", usedPctDetail, nil)
 
 		// Record that we warned this user
 		_ = s.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{
