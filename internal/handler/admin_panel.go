@@ -26,7 +26,7 @@ func sendAdminPanel(ctx context.Context, b *bot.Bot, chatID int64) {
 			ChatID: chatID,
 			Text: "⚠️ <b>Веб-панель администратора не настроена</b>\n\n" +
 				"Задайте переменную окружения ADMIN_WEBAPP_URL, чтобы открыть панель отсюда.\n\n" +
-				"Пока панель недоступна, единственная резервная команда — /sync (синхронизация пользователей с Remnawave).",
+				"Пока панель недоступна, единственная резервная команда — /sync (синхронизация пользователей с Vexel VPN).",
 			ParseMode: models.ParseModeHTML,
 		})
 		if err != nil {

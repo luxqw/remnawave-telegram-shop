@@ -6,7 +6,9 @@ import { StatTile } from "../components/StatTile";
 import { ChartLine } from "../components/ChartLine";
 import { ChartBar } from "../components/ChartBar";
 import { ActivityFeed } from "../components/ActivityFeed";
-import { formatMoney } from "../lib/format";
+import { formatMoney, pluralDays } from "../lib/format";
+
+const DAY_RANGES = [7, 30, 90] as const;
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -14,12 +16,13 @@ export function Dashboard() {
   const [growth, setGrowth] = useState<DayPoint[] | null>(null);
   const [referrals, setReferrals] = useState<DashboardReferrals | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [days, setDays] = useState(30);
 
   useEffect(() => {
     Promise.all([
       api.get<DashboardStats>("/admin/api/dashboard/stats"),
-      api.get<DayPoint[]>("/admin/api/dashboard/revenue?days=30"),
-      api.get<DayPoint[]>("/admin/api/dashboard/growth?days=30"),
+      api.get<DayPoint[]>(`/admin/api/dashboard/revenue?days=${days}`),
+      api.get<DayPoint[]>(`/admin/api/dashboard/growth?days=${days}`),
       api.get<DashboardReferrals>("/admin/api/dashboard/referrals"),
     ])
       .then(([s, r, g, ref]) => {
@@ -29,7 +32,7 @@ export function Dashboard() {
         setReferrals(ref);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Ошибка загрузки"));
-  }, []);
+  }, [days]);
 
   if (error) {
     return (
@@ -52,15 +55,26 @@ export function Dashboard() {
           <GlassCard>
             <div class="row" style={{ justifyContent: "space-between", marginBottom: 14 }}>
               <div>
-                <div class="stat-tile-label">Выручка за 30 дней</div>
+                <div class="stat-tile-label">Выручка за {days} {pluralDays(days)}</div>
                 <div class="stat-tile-value mono">{formatMoney(totalRevenue, "RUB")}</div>
               </div>
+              <div class="days-toggle">
+                {DAY_RANGES.map((d) => (
+                  <button
+                    key={d}
+                    class={`days-toggle-btn ${days === d ? "active" : ""}`}
+                    onClick={() => setDays(d)}
+                  >
+                    {d}д
+                  </button>
+                ))}
+              </div>
             </div>
-            <ChartLine points={revenue} height={220} />
+            <ChartLine points={revenue} height={220} days={days} />
           </GlassCard>
           <GlassCard style={{ marginTop: 16 }}>
             <div class="stat-tile-label" style={{ marginBottom: 14 }}>Новые пользователи / день</div>
-            <ChartBar points={growth} height={120} />
+            <ChartBar points={growth} height={120} days={days} />
           </GlassCard>
         </div>
         <div class="bento-side">

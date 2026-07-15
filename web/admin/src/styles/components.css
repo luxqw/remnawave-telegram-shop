@@ -33,7 +33,7 @@
   width: 28px;
   height: 28px;
   border-radius: var(--radius-sm);
-  background: var(--accent-mono);
+  object-fit: contain;
   flex-shrink: 0;
 }
 
@@ -107,7 +107,7 @@
   padding-top: max(0px, env(safe-area-inset-top));
   height: calc(var(--topbar-height) + env(safe-area-inset-top));
   border-bottom: 1px solid var(--surface-glass-border);
-  background: rgba(8, 8, 10, 0.6);
+  background: var(--surface-topbar);
   backdrop-filter: blur(var(--blur-card));
   -webkit-backdrop-filter: blur(var(--blur-card));
   position: sticky;
@@ -176,12 +176,32 @@
 /* --- Glass surfaces --- */
 
 .glass-card {
+  position: relative;
+  overflow: hidden;
   background: var(--surface-glass);
-  backdrop-filter: blur(var(--blur-card));
-  -webkit-backdrop-filter: blur(var(--blur-card));
+  backdrop-filter: blur(var(--blur-card)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--blur-card)) saturate(160%);
   border: 1px solid var(--surface-glass-border);
   border-radius: var(--radius-md);
   padding: 20px;
+  box-shadow:
+    0 30px 60px -30px var(--glass-shadow),
+    inset 0 1px 0 var(--glass-highlight);
+  --mx: 50%;
+  --my: 0%;
+}
+
+/* Cursor-tracked spotlight — --mx/--my are written by src/lib/spotlight.ts on pointermove.
+   Guarded there behind prefers-reduced-motion/pointer:fine, so on touch/reduced-motion this
+   pseudo-element just sits at its default (50%, 0%) position and never moves. */
+.glass-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  border-radius: inherit;
+  background: radial-gradient(360px circle at var(--mx) var(--my), var(--glass-highlight), transparent 60%);
 }
 
 /* Bento dashboard grid: one large 8/12 chart + a 4/12 stat-tile stack, not three equal cards. */
@@ -268,13 +288,13 @@
 
 .btn-primary {
   background: var(--accent-mono);
-  color: #08080a;
+  color: var(--accent-mono-ink);
   border-color: var(--accent-mono);
   font-weight: 600;
 }
 
 .btn-primary:hover {
-  background: #e5e5e7;
+  background: var(--accent-mono-hover);
 }
 
 .btn-danger {
@@ -482,13 +502,13 @@
 }
 
 .badge-success {
-  color: #7ee29a;
-  border-color: rgba(126, 226, 154, 0.4);
+  color: var(--badge-success-color);
+  border-color: var(--badge-success-border);
 }
 
 .badge-danger {
-  color: var(--accent-danger);
-  border-color: rgba(255, 69, 58, 0.4);
+  color: var(--badge-danger-color);
+  border-color: var(--badge-danger-border);
 }
 
 .badge-neutral {
@@ -690,6 +710,121 @@
 
 .chart-bar {
   fill: var(--surface-glass-hover);
+}
+
+.chart-bar:hover,
+.chart-bar.hovered {
+  fill: var(--surface-glass-border);
+}
+
+.chart-gridline {
+  stroke: var(--surface-glass-border);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.chart-axis-line {
+  stroke: var(--surface-glass-border);
+  stroke-width: 1;
+}
+
+.chart-axis-tick {
+  stroke: var(--surface-glass-border);
+  stroke-width: 1;
+}
+
+.chart-point-hit {
+  fill: transparent;
+  /* SVG's default pointer-events:visiblePainted only registers hits on painted (non-transparent)
+     fill — a fully transparent hit-target circle wouldn't reliably catch hover/touch without
+     this override. */
+  pointer-events: all;
+}
+
+.chart-point-dot {
+  fill: var(--accent-mono);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out-expo);
+}
+
+.chart-point-dot.visible {
+  opacity: 1;
+}
+
+.chart-wrap {
+  position: relative;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 5;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  transform: translate(-50%, calc(-100% - 10px));
+  pointer-events: none;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.chart-tooltip-label {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chart-tooltip-value {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.days-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-glass-border);
+  background: var(--surface-glass);
+}
+
+.days-toggle-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out-expo),
+    color var(--duration-fast) var(--ease-out-expo);
+}
+
+.days-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.days-toggle-btn.active {
+  background: var(--accent-mono);
+  color: var(--accent-mono-ink);
+  font-weight: 600;
+}
+
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.theme-toggle-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* --- Phone breakpoint: sidebar becomes an off-canvas drawer, tables become cards --- */
