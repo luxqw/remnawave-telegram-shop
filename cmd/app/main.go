@@ -82,6 +82,7 @@ func main() {
 	auditLogRepository := database.NewAdminAuditLogRepository(pool)
 	webhookInboxRepository := database.NewWebhookInboxRepository(pool)
 	activityRepository := database.NewActivityRepository(pool)
+	notificationLogRepository := database.NewNotificationLogRepository(pool)
 
 	cryptoPayClient := cryptopay.NewCryptoPayClient(config.CryptoPayUrl(), config.CryptoPayToken())
 	remnawaveClient := remnawave.NewClient(config.RemnawaveUrl(), config.RemnawaveToken(), config.RemnawaveMode())
@@ -112,13 +113,13 @@ func main() {
 		defer cronScheduler.Stop()
 	}
 
-	subService := notification.NewSubscriptionService(customerRepository, purchaseRepository, paymentService, b, tm)
+	subService := notification.NewSubscriptionService(customerRepository, purchaseRepository, paymentService, b, tm, notificationLogRepository)
 
 	subscriptionNotificationCronScheduler := subscriptionChecker(subService)
 	subscriptionNotificationCronScheduler.Start()
 	defer subscriptionNotificationCronScheduler.Stop()
 
-	trafficSvc := notification.NewTrafficWarningService(customerRepository, remnawaveClient, b, tm)
+	trafficSvc := notification.NewTrafficWarningService(customerRepository, remnawaveClient, b, tm, notificationLogRepository)
 	trafficCron := setupTrafficWarningCron(trafficSvc)
 	trafficCron.Start()
 	defer trafficCron.Stop()
@@ -142,7 +143,7 @@ func main() {
 		tributeClient = tribute.NewClient(paymentService, customerRepository, topupRepository, webhookInboxRepository, remnawaveClient, b, tm)
 	}
 
-	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, remnawaveClient, syncService, b, tm)
+	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, notificationLogRepository, remnawaveClient, syncService, b, tm)
 
 	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository)
 

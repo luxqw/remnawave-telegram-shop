@@ -132,11 +132,14 @@ func (s *Service) deliverBroadcast(ctx context.Context, jobID, text, segment str
 			switch {
 			case err == nil:
 				sent++
+				s.logNotification(ctx, telegramID, "broadcast", "sent", nil)
 			case isUserUnreachable(err):
 				unreachable++
+				s.logNotification(ctx, telegramID, "broadcast", "failed", err)
 			default:
 				otherFailed++
 				slog.Warn("adminops broadcast: send failed", "telegram_id", telegramID, "error", err)
+				s.logNotification(ctx, telegramID, "broadcast", "failed", err)
 			}
 		}
 		snapshot(false)

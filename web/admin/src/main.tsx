@@ -19,6 +19,7 @@ import { Broadcast } from "./routes/Broadcast";
 import { Referrals } from "./routes/Referrals";
 import { Webhooks } from "./routes/Webhooks";
 import { AuditLog } from "./routes/AuditLog";
+import { Activity } from "./routes/Activity";
 import { System } from "./routes/System";
 
 const TITLES: Record<Route["name"], string> = {
@@ -30,6 +31,7 @@ const TITLES: Record<Route["name"], string> = {
   referrals: "Рефералы",
   webhooks: "Вебхуки",
   audit: "Аудит-лог",
+  activity: "Активность",
   system: "Система",
 };
 
@@ -51,6 +53,8 @@ function RouteView({ route }: { route: Route }) {
       return <Webhooks />;
     case "audit":
       return <AuditLog />;
+    case "activity":
+      return <Activity />;
     case "system":
       return <System />;
   }

@@ -82,6 +82,10 @@ export interface WebhookInboxEntry {
   processedAt: string | null;
 }
 
+export interface WebhookInboxDetail extends WebhookInboxEntry {
+  payload: string;
+}
+
 export interface DashboardStats {
   total: number;
   activePaid: number;
@@ -103,7 +107,7 @@ export interface DashboardReferrals {
 }
 
 export interface ActivityEvent {
-  type: "signup" | "purchase" | "referral_bonus" | "admin_action";
+  type: "signup" | "purchase" | "referral_bonus" | "admin_action" | "notification";
   timestamp: string;
   actorId: number | null;
   actorUsername?: string;

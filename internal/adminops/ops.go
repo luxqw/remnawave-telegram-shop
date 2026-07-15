@@ -42,16 +42,17 @@ var (
 // the affected customer and to deliver broadcasts — it never parses inbound Telegram
 // updates/callbacks, which is what keeps this package UI-agnostic.
 type Service struct {
-	customerRepository     *database.CustomerRepository
-	purchaseRepository     *database.PurchaseRepository
-	topupRepository        *database.TrafficTopupRepository
-	referralRepository     *database.ReferralRepository
-	auditLogRepository     *database.AdminAuditLogRepository
-	webhookInboxRepository *database.WebhookInboxRepository
-	remnawaveClient        *remnawave.Client
-	syncService            *syncsvc.SyncService
-	telegramBot            *bot.Bot
-	translation            *translation.Manager
+	customerRepository        *database.CustomerRepository
+	purchaseRepository        *database.PurchaseRepository
+	topupRepository           *database.TrafficTopupRepository
+	referralRepository        *database.ReferralRepository
+	auditLogRepository        *database.AdminAuditLogRepository
+	webhookInboxRepository    *database.WebhookInboxRepository
+	notificationLogRepository *database.NotificationLogRepository
+	remnawaveClient           *remnawave.Client
+	syncService               *syncsvc.SyncService
+	telegramBot               *bot.Bot
+	translation               *translation.Manager
 }
 
 func NewService(
@@ -61,22 +62,47 @@ func NewService(
 	referralRepository *database.ReferralRepository,
 	auditLogRepository *database.AdminAuditLogRepository,
 	webhookInboxRepository *database.WebhookInboxRepository,
+	notificationLogRepository *database.NotificationLogRepository,
 	remnawaveClient *remnawave.Client,
 	syncService *syncsvc.SyncService,
 	telegramBot *bot.Bot,
 	translationManager *translation.Manager,
 ) *Service {
 	return &Service{
-		customerRepository:     customerRepository,
-		purchaseRepository:     purchaseRepository,
-		topupRepository:        topupRepository,
-		referralRepository:     referralRepository,
-		auditLogRepository:     auditLogRepository,
-		webhookInboxRepository: webhookInboxRepository,
-		remnawaveClient:        remnawaveClient,
-		syncService:            syncService,
-		telegramBot:            telegramBot,
-		translation:            translationManager,
+		customerRepository:        customerRepository,
+		purchaseRepository:        purchaseRepository,
+		topupRepository:           topupRepository,
+		referralRepository:        referralRepository,
+		auditLogRepository:        auditLogRepository,
+		webhookInboxRepository:    webhookInboxRepository,
+		notificationLogRepository: notificationLogRepository,
+		remnawaveClient:           remnawaveClient,
+		syncService:               syncService,
+		telegramBot:               telegramBot,
+		translation:               translationManager,
+	}
+}
+
+// logNotification writes a best-effort notification_log row for a per-recipient delivery attempt
+// (e.g. a broadcast). A failure to write must never block or fail the actual send loop — only
+// logged, never returned.
+func (s *Service) logNotification(ctx context.Context, targetID int64, notificationType, status string, sendErr error) {
+	if s.notificationLogRepository == nil {
+		return
+	}
+	var errMsg *string
+	if sendErr != nil {
+		m := sendErr.Error()
+		errMsg = &m
+	}
+	if err := s.notificationLogRepository.Create(ctx, database.NotificationLog{
+		CustomerTelegramID: targetID,
+		NotificationType:   notificationType,
+		Status:             status,
+		ErrorMessage:       errMsg,
+		Source:             "admin",
+	}); err != nil {
+		slog.Error("adminops: write notification_log", "notification_type", notificationType, "target", targetID, "error", err)
 	}
 }
 

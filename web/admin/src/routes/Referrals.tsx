@@ -6,6 +6,7 @@ import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
 import { TelegramUserLink } from "../components/TelegramUserLink";
+import { navigate } from "../router";
 
 export function Referrals() {
   const [page, setPage] = useState<Page<Referral> | null>(null);
@@ -16,10 +17,30 @@ export function Referrals() {
   }, [pageNum]);
 
   const columns: Column<Referral>[] = [
-    { header: "Реферер", render: (r) => <TelegramUserLink id={r.referrerId} username={r.referrerUsername} /> },
-    { header: "Приглашённый", render: (r) => <TelegramUserLink id={r.refereeId} username={r.refereeUsername} /> },
-    { header: "Дата", render: (r) => new Date(r.usedAt).toLocaleString("ru-RU") },
-    { header: "Бонус", render: (r) => (r.bonusGranted ? <Badge variant="success">Начислен</Badge> : <Badge variant="neutral">Ожидание</Badge>) },
+    {
+      header: "Реферер",
+      render: (r) => <TelegramUserLink id={r.referrerId} username={r.referrerUsername} />,
+      sortKey: "referrerId",
+      sortValue: (r) => r.referrerId,
+    },
+    {
+      header: "Приглашённый",
+      render: (r) => <TelegramUserLink id={r.refereeId} username={r.refereeUsername} />,
+      sortKey: "refereeId",
+      sortValue: (r) => r.refereeId,
+    },
+    {
+      header: "Дата",
+      render: (r) => new Date(r.usedAt).toLocaleString("ru-RU"),
+      sortKey: "usedAt",
+      sortValue: (r) => new Date(r.usedAt).getTime(),
+    },
+    {
+      header: "Бонус",
+      render: (r) => (r.bonusGranted ? <Badge variant="success">Начислен</Badge> : <Badge variant="neutral">Ожидание</Badge>),
+      sortKey: "bonusGranted",
+      sortValue: (r) => (r.bonusGranted ? 1 : 0),
+    },
   ];
 
   return (
@@ -28,7 +49,13 @@ export function Referrals() {
         <div class="shimmer" style={{ height: 200 }} />
       ) : (
         <>
-          <DataTable columns={columns} rows={page.items} keyFn={(r) => r.id} emptyMessage="Рефералов пока нет" />
+          <DataTable
+            columns={columns}
+            rows={page.items}
+            keyFn={(r) => r.id}
+            onRowClick={(r) => navigate(`users/${r.refereeId}`)}
+            emptyMessage="Рефералов пока нет"
+          />
           <Pagination page={pageNum} limit={page.limit} total={page.total} onChange={setPageNum} />
         </>
       )}

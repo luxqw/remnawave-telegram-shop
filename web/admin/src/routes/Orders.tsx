@@ -6,6 +6,7 @@ import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
 import { TelegramUserLink } from "../components/TelegramUserLink";
+import { DetailModal } from "../components/DetailModal";
 import { formatMoney } from "../lib/format";
 
 const STATUSES = ["", "new", "pending", "paid", "cancel"];
@@ -16,6 +17,7 @@ export function Orders() {
   const [pageNum, setPageNum] = useState(1);
   const [status, setStatus] = useState("");
   const [invoiceType, setInvoiceType] = useState("");
+  const [detail, setDetail] = useState<Purchase | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams({ page: String(pageNum), limit: "25" });
@@ -23,6 +25,10 @@ export function Orders() {
     if (invoiceType) params.set("invoiceType", invoiceType);
     api.get<Page<Purchase>>(`/admin/api/orders?${params.toString()}`).then(setPage);
   }, [pageNum, status, invoiceType]);
+
+  const openDetail = (p: Purchase) => {
+    api.get<Purchase>(`/admin/api/orders/${p.id}`).then(setDetail).catch(() => setDetail(p));
+  };
 
   const exportUrl = () => {
     const params = new URLSearchParams();
@@ -32,13 +38,34 @@ export function Orders() {
   };
 
   const columns: Column<Purchase>[] = [
-    { header: "ID", render: (p) => <span class="mono">{p.id}</span> },
-    { header: "Пользователь", render: (p) => <TelegramUserLink id={p.telegramId} username={p.username} /> },
-    { header: "Сумма", render: (p) => formatMoney(p.amount, p.currency), align: "right" },
-    { header: "Мес.", render: (p) => p.month, align: "right" },
-    { header: "Статус", render: (p) => <Badge variant={p.status === "paid" ? "success" : p.status === "cancel" ? "danger" : "neutral"}>{p.status}</Badge> },
-    { header: "Тип", render: (p) => p.invoiceType },
-    { header: "Создан", render: (p) => new Date(p.createdAt).toLocaleString("ru-RU") },
+    { header: "ID", render: (p) => <span class="mono">{p.id}</span>, sortKey: "id", sortValue: (p) => p.id },
+    {
+      header: "Пользователь",
+      render: (p) => <TelegramUserLink id={p.telegramId} username={p.username} />,
+      sortKey: "telegramId",
+      sortValue: (p) => p.telegramId ?? null,
+    },
+    {
+      header: "Сумма",
+      render: (p) => formatMoney(p.amount, p.currency),
+      align: "right",
+      sortKey: "amount",
+      sortValue: (p) => p.amount,
+    },
+    { header: "Мес.", render: (p) => p.month, align: "right", sortKey: "month", sortValue: (p) => p.month },
+    {
+      header: "Статус",
+      render: (p) => <Badge variant={p.status === "paid" ? "success" : p.status === "cancel" ? "danger" : "neutral"}>{p.status}</Badge>,
+      sortKey: "status",
+      sortValue: (p) => p.status,
+    },
+    { header: "Тип", render: (p) => p.invoiceType, sortKey: "invoiceType", sortValue: (p) => p.invoiceType },
+    {
+      header: "Создан",
+      render: (p) => new Date(p.createdAt).toLocaleString("ru-RU"),
+      sortKey: "createdAt",
+      sortValue: (p) => new Date(p.createdAt).getTime(),
+    },
   ];
 
   return (
@@ -58,11 +85,24 @@ export function Orders() {
           <div class="shimmer" style={{ height: 200 }} />
         ) : (
           <>
-            <DataTable columns={columns} rows={page.items} keyFn={(p) => p.id} emptyMessage="Заказов не найдено" />
+            <DataTable columns={columns} rows={page.items} keyFn={(p) => p.id} onRowClick={openDetail} emptyMessage="Заказов не найдено" />
             <Pagination page={pageNum} limit={page.limit} total={page.total} onChange={setPageNum} />
           </>
         )}
       </GlassCard>
+      <DetailModal open={detail !== null} title={`Заказ #${detail?.id ?? ""}`} onClose={() => setDetail(null)} body={detail && (
+        <div class="stack" style={{ gap: 6 }}>
+          <div class="data-card-row"><span class="data-card-label">ID</span><span class="data-card-value mono">{detail.id}</span></div>
+          <div class="data-card-row"><span class="data-card-label">Пользователь</span><span class="data-card-value"><TelegramUserLink id={detail.telegramId} username={detail.username} /></span></div>
+          <div class="data-card-row"><span class="data-card-label">Сумма</span><span class="data-card-value">{formatMoney(detail.amount, detail.currency)}</span></div>
+          <div class="data-card-row"><span class="data-card-label">Месяцев</span><span class="data-card-value">{detail.month}</span></div>
+          <div class="data-card-row"><span class="data-card-label">Статус</span><span class="data-card-value">{detail.status}</span></div>
+          <div class="data-card-row"><span class="data-card-label">Тип оплаты</span><span class="data-card-value">{detail.invoiceType}</span></div>
+          <div class="data-card-row"><span class="data-card-label">Создан</span><span class="data-card-value">{new Date(detail.createdAt).toLocaleString("ru-RU")}</span></div>
+          <div class="data-card-row"><span class="data-card-label">Оплачен</span><span class="data-card-value">{detail.paidAt ? new Date(detail.paidAt).toLocaleString("ru-RU") : "—"}</span></div>
+          <div class="data-card-row"><span class="data-card-label">Истекает</span><span class="data-card-value">{detail.expireAt ? new Date(detail.expireAt).toLocaleString("ru-RU") : "—"}</span></div>
+        </div>
+      )} />
     </div>
   );
 }
