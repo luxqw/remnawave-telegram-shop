@@ -710,7 +710,7 @@
 }
 
 .toast-error {
-  border-color: rgba(255, 69, 58, 0.4);
+  border-color: var(--badge-danger-border);
 }
 
 /* --- Pagination --- */

@@ -72,6 +72,18 @@ export function DataTable<T>(props: {
                     class={col.sortKey ? "sortable" : undefined}
                     style={col.align === "right" ? { textAlign: "right" } : undefined}
                     onClick={col.sortKey ? () => cycleSort(col) : undefined}
+                    tabIndex={col.sortKey ? 0 : undefined}
+                    aria-sort={active ? (sort!.dir === "asc" ? "ascending" : "descending") : col.sortKey ? "none" : undefined}
+                    onKeyDown={
+                      col.sortKey
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              cycleSort(col);
+                            }
+                          }
+                        : undefined
+                    }
                   >
                     {col.header}
                     {col.sortKey && (

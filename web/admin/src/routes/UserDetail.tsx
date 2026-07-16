@@ -113,7 +113,7 @@ export function UserDetail(props: { id: number }) {
     { header: "Сумма", render: (p) => formatMoney(p.amount, p.currency), align: "right" },
     { header: "Статус", render: (p) => <Badge variant={p.status === "paid" ? "success" : "neutral"}>{p.status}</Badge> },
     { header: "Тип", render: (p) => p.invoiceType },
-    { header: "Создан", render: (p) => new Date(p.createdAt).toLocaleDateString("ru-RU") },
+    { header: "Создан", render: (p) => new Date(p.createdAt).toLocaleString("ru-RU") },
   ];
 
   const auditColumns: Column<AuditLogEntry>[] = [
@@ -133,7 +133,7 @@ export function UserDetail(props: { id: number }) {
 
   const referralColumns: Column<Referral>[] = [
     { header: "Приглашённый", render: (r) => <TelegramUserLink id={r.refereeId} username={r.refereeUsername} /> },
-    { header: "Дата", render: (r) => new Date(r.usedAt).toLocaleDateString("ru-RU") },
+    { header: "Дата", render: (r) => new Date(r.usedAt).toLocaleString("ru-RU") },
     { header: "Бонус", render: (r) => (r.bonusGranted ? <Badge variant="success">Начислен</Badge> : <Badge variant="neutral">Ожидание</Badge>) },
   ];
 

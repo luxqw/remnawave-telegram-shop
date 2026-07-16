@@ -44,21 +44,23 @@ export function Referrals() {
   ];
 
   return (
-    <GlassCard>
-      {!page ? (
-        <div class="shimmer" style={{ height: 200 }} />
-      ) : (
-        <>
-          <DataTable
-            columns={columns}
-            rows={page.items}
-            keyFn={(r) => r.id}
-            onRowClick={(r) => navigate(`users/${r.refereeId}`)}
-            emptyMessage="Рефералов пока нет"
-          />
-          <Pagination page={pageNum} limit={page.limit} total={page.total} onChange={setPageNum} />
-        </>
-      )}
-    </GlassCard>
+    <div class="stack">
+      <GlassCard>
+        {!page ? (
+          <div class="shimmer" style={{ height: 200 }} />
+        ) : (
+          <>
+            <DataTable
+              columns={columns}
+              rows={page.items}
+              keyFn={(r) => r.id}
+              onRowClick={(r) => navigate(`users/${r.refereeId}`)}
+              emptyMessage="Рефералов пока нет"
+            />
+            <Pagination page={pageNum} limit={page.limit} total={page.total} onChange={setPageNum} />
+          </>
+        )}
+      </GlassCard>
+    </div>
   );
 }

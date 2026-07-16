@@ -15,7 +15,6 @@ const DOT_RADIUS = 3;
 export function ChartLine(props: {
   points: DayPoint[];
   height?: number;
-  days?: number;
   formatValue?: (v: number) => string;
 }) {
   const height = props.height ?? 220;

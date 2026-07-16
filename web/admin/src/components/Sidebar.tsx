@@ -63,6 +63,7 @@ export function Sidebar(props: { current: Route; open: boolean; onNavigate: () =
                   props.onNavigate();
                 }}
                 href={`#/${item.route}`}
+                aria-label={collapsed ? item.label : undefined}
               >
                 <span class="nav-item-icon">{item.icon}</span>
                 {!collapsed && <span>{item.label}</span>}

@@ -10,7 +10,7 @@ const AXIS_HEIGHT = 20;
 const GRID_FRACTIONS = [0.25, 0.5, 0.75];
 
 // Bespoke inline-SVG bar chart for daily counters (e.g. new customers/day).
-export function ChartBar(props: { points: DayPoint[]; height?: number; days?: number }) {
+export function ChartBar(props: { points: DayPoint[]; height?: number }) {
   const height = props.height ?? 140;
   const totalHeight = height + AXIS_HEIGHT;
   const width = 600;

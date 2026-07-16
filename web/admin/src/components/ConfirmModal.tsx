@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 
 // ConfirmModal never trusts data handed to it from a table row — the caller's onOpen (if
@@ -16,6 +16,16 @@ export function ConfirmModal(props: {
   onCancel: () => void;
 }) {
   const [pending, setPending] = useState(false);
+  const busy = props.busy || pending;
+
+  useEffect(() => {
+    if (!props.open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) props.onCancel();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [props.open, busy, props.onCancel]);
 
   if (!props.open) return null;
 
@@ -27,8 +37,6 @@ export function ConfirmModal(props: {
       setPending(false);
     }
   };
-
-  const busy = props.busy || pending;
 
   return (
     <div class="modal-backdrop" onClick={props.onCancel}>

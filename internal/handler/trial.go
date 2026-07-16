@@ -26,14 +26,14 @@ func (h Handler) TrialCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 	callback := update.CallbackQuery.Message.Message
+	langCode := update.CallbackQuery.From.LanguageCode
 	if c.SubscriptionLink != nil {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
-			Text:            "У вас уже есть активная подписка",
+			Text:            h.translation.GetText(langCode, "trial_already_active"),
 		})
 		return
 	}
-	langCode := update.CallbackQuery.From.LanguageCode
 	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
@@ -63,10 +63,11 @@ func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, u
 		return
 	}
 	callback := update.CallbackQuery.Message.Message
+	langCode := update.CallbackQuery.From.LanguageCode
 	if c.SubscriptionLink != nil {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
-			Text:            "У вас уже есть активная подписка",
+			Text:            h.translation.GetText(langCode, "trial_already_active"),
 		})
 		return
 	}
@@ -76,7 +77,6 @@ func (h Handler) ActivateTrialCallbackHandler(ctx context.Context, b *bot.Bot, u
 		slog.Error("Error activating trial", "error", err)
 		return
 	}
-	langCode := update.CallbackQuery.From.LanguageCode
 	_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      callback.Chat.ID,
 		MessageID:   callback.ID,

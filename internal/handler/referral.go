@@ -38,7 +38,7 @@ func (h Handler) ReferralCallbackHandler(ctx context.Context, b *bot.Bot, update
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    callbackMessage.Chat.ID,
 			MessageID: callbackMessage.ID,
-			Text:      "❌ Реферальная ссылка временно недоступна.",
+			Text:      h.translation.GetText(langCode, "referral_link_unavailable"),
 			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
 				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
 			}},

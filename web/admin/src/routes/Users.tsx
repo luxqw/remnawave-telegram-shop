@@ -59,7 +59,7 @@ export function Users() {
     { header: "Статус", render: statusBadge, sortKey: "status", sortValue: statusRank },
     {
       header: "Истекает",
-      render: (c) => (c.expireAt ? new Date(c.expireAt).toLocaleDateString("ru-RU") : "—"),
+      render: (c) => (c.expireAt ? new Date(c.expireAt).toLocaleString("ru-RU") : "—"),
       sortKey: "expireAt",
       sortValue: (c) => (c.expireAt ? new Date(c.expireAt).getTime() : null),
     },

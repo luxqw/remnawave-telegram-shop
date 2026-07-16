@@ -70,11 +70,11 @@ export function Dashboard() {
                 ))}
               </div>
             </div>
-            <ChartLine points={revenue} height={220} days={days} />
+            <ChartLine points={revenue} height={220} formatValue={(v) => formatMoney(v, "RUB")} />
           </GlassCard>
           <GlassCard style={{ marginTop: 16 }}>
             <div class="stat-tile-label" style={{ marginBottom: 14 }}>Новые пользователи / день</div>
-            <ChartBar points={growth} height={120} days={days} />
+            <ChartBar points={growth} height={120} />
           </GlassCard>
         </div>
         <div class="bento-side">
