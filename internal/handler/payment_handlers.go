@@ -16,26 +16,45 @@ import (
 	"remnawave-tg-shop-bot/internal/remnawave"
 )
 
+// BuyCallbackHandler shows the month picker. RollyPay is the only payment provider, so a month
+// button routes straight into PaymentCallbackHandler (CallbackPayment) instead of through an
+// intermediate provider-choice screen — there's nothing to choose anymore.
 func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	callback := update.CallbackQuery.Message.Message
 	langCode := update.CallbackQuery.From.LanguageCode
 
+	if !config.IsRollyPayEnabled() {
+		_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    callback.Chat.ID,
+			MessageID: callback.ID,
+			ParseMode: models.ParseModeHTML,
+			Text:      h.translation.GetText(langCode, "payment_unavailable"),
+			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+			}},
+		})
+		if err != nil {
+			slog.Error("Error sending buy message", "error", err)
+		}
+		return
+	}
+
 	var priceButtons []models.InlineKeyboardButton
 
 	if config.Price1() > 0 {
-		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_1").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 1, config.Price1())))
+		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_1").InlineCallback(fmt.Sprintf("%s?month=%d&invoiceType=%s&amount=%d", CallbackPayment, 1, database.InvoiceTypeRollyPay, config.Price1())))
 	}
 
 	if config.Price3() > 0 {
-		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_3").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 3, config.Price3())))
+		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_3").InlineCallback(fmt.Sprintf("%s?month=%d&invoiceType=%s&amount=%d", CallbackPayment, 3, database.InvoiceTypeRollyPay, config.Price3())))
 	}
 
 	if config.Price6() > 0 {
-		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_6").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 6, config.Price6())))
+		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_6").InlineCallback(fmt.Sprintf("%s?month=%d&invoiceType=%s&amount=%d", CallbackPayment, 6, database.InvoiceTypeRollyPay, config.Price6())))
 	}
 
 	if config.Price12() > 0 {
-		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_12").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, 12, config.Price12())))
+		priceButtons = append(priceButtons, h.translation.GetButton(langCode, "month_12").InlineCallback(fmt.Sprintf("%s?month=%d&invoiceType=%s&amount=%d", CallbackPayment, 12, database.InvoiceTypeRollyPay, config.Price12())))
 	}
 
 	keyboard := [][]models.InlineKeyboardButton{}
@@ -63,42 +82,6 @@ func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *mod
 
 	if err != nil {
 		slog.Error("Error sending buy message", "error", err)
-	}
-}
-
-func (h Handler) SellCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	callback := update.CallbackQuery.Message.Message
-	callbackQuery := parseCallbackData(update.CallbackQuery.Data)
-	langCode := update.CallbackQuery.From.LanguageCode
-	month := callbackQuery["month"]
-	amount := callbackQuery["amount"]
-
-	var keyboard [][]models.InlineKeyboardButton
-
-	if config.IsRollyPayEnabled() {
-		keyboard = append(keyboard, []models.InlineKeyboardButton{
-			h.translation.GetButton(langCode, "rollypay_button").InlineCallback(fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeRollyPay, amount)),
-		})
-	}
-
-	// Tribute is intentionally not offered here — it's frozen to auto-renewal for customers who
-	// already have a Tribute subscription (see internal/tribute package doc). New/renewing
-	// purchases only ever go through RollyPay so the customer base migrates there over time.
-
-	keyboard = append(keyboard, []models.InlineKeyboardButton{
-		h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackBuy),
-	})
-
-	_, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
-		ChatID:    callback.Chat.ID,
-		MessageID: callback.ID,
-		ReplyMarkup: models.InlineKeyboardMarkup{
-			InlineKeyboard: keyboard,
-		},
-	})
-
-	if err != nil {
-		slog.Error("Error sending sell message", "error", err)
 	}
 }
 
@@ -156,20 +139,25 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 
-	message, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+	monthLabel := h.translation.GetText(langCode, fmt.Sprintf("month_%d", month))
+	summaryText := fmt.Sprintf(h.translation.GetText(langCode, "payment_summary"), monthLabel, price)
+
+	message, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
 		MessageID: callback.ID,
+		ParseMode: models.ParseModeHTML,
+		Text:      summaryText,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
 					h.translation.GetButton(langCode, "pay_button").InlineURL(paymentURL),
-					h.translation.GetButton(langCode, "back_button").InlineCallback(fmt.Sprintf("%s?month=%d&amount=%d", CallbackSell, month, price)),
+					h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackBuy),
 				},
 			},
 		},
 	})
 	if err != nil {
-		slog.Error("Error updating sell message", "error", err)
+		slog.Error("Error updating payment message", "error", err)
 		return
 	}
 	h.cache.Set(purchaseId, message.ID)
