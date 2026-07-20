@@ -286,6 +286,7 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 		Amount:      fmt.Sprintf("%.2f", amount),
 		OrderID:     fmt.Sprintf("sub-%d", purchaseId),
 		Description: fmt.Sprintf("Subscription %d month(s)", months),
+		Test:        config.RollyPayTestMode() && customer.TelegramID == config.GetAdminTelegramId(),
 	})
 	if err != nil {
 		slog.Error("Error creating rollypay payment", "error", err)

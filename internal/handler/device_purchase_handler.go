@@ -81,6 +81,7 @@ func (h Handler) DeviceBuyCallbackHandler(ctx context.Context, b *bot.Bot, updat
 		Amount:      fmt.Sprintf("%d.00", priceRUB),
 		OrderID:     fmt.Sprintf("device-%d", topupID),
 		Description: "+1 device slot",
+		Test:        config.RollyPayTestMode() && telegramID == config.GetAdminTelegramId(),
 	})
 	if err != nil {
 		slog.Error("device buy: create rollypay payment", "error", err, "device_topup_id", topupID)

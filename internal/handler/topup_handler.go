@@ -181,6 +181,7 @@ func (h Handler) createTopupInvoice(ctx context.Context, b *bot.Bot, chatID int6
 		Amount:      fmt.Sprintf("%d.00", priceRUB),
 		OrderID:     fmt.Sprintf("topup-%d", topupID),
 		Description: fmt.Sprintf("+%d GB traffic top-up", gb),
+		Test:        config.RollyPayTestMode() && telegramID == config.GetAdminTelegramId(),
 	})
 	if err != nil {
 		slog.Error("topup: create rollypay payment", "error", err, "topup_id", topupID)
