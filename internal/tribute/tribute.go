@@ -99,7 +99,7 @@ func (c *Client) WebHookHandler() http.Handler {
 			return
 		}
 
-		inboxID, storeErr := c.webhookInbox.Create(ctx, body, wh.Name)
+		inboxID, storeErr := c.webhookInbox.Create(ctx, body, wh.Name, "tribute")
 		if storeErr != nil {
 			slog.Error("webhook: store in inbox failed", "error", storeErr)
 		}
@@ -146,7 +146,7 @@ func (c *Client) dispatch(ctx context.Context, wh SubscriptionWebhook, body []by
 }
 
 func (c *Client) RetryFailed(ctx context.Context) {
-	items, err := c.webhookInbox.FindRetryable(ctx, 3, 2*time.Minute)
+	items, err := c.webhookInbox.FindRetryable(ctx, "tribute", 3, 2*time.Minute)
 	if err != nil {
 		slog.Error("webhook retry: find retryable", "error", err)
 		return

@@ -12,20 +12,16 @@ import (
 	"remnawave-tg-shop-bot/internal/adminops"
 	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/config"
-	"remnawave-tg-shop-bot/internal/cryptopay"
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/handler"
-	"remnawave-tg-shop-bot/internal/moynalog"
 	"remnawave-tg-shop-bot/internal/notification"
 	"remnawave-tg-shop-bot/internal/payment"
 	"remnawave-tg-shop-bot/internal/remnawave"
+	"remnawave-tg-shop-bot/internal/rollypay"
 	"remnawave-tg-shop-bot/internal/sync"
 	"remnawave-tg-shop-bot/internal/translation"
 	"remnawave-tg-shop-bot/internal/tribute"
 	"remnawave-tg-shop-bot/internal/webapp"
-	"remnawave-tg-shop-bot/internal/yookasa"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -47,18 +43,6 @@ func main() {
 	config.InitConfig()
 	slog.Info("Application starting", "version", Version, "commit", Commit, "buildDate", BuildDate)
 
-	// Check if Moynalog is enabled
-	var moynalogClient *moynalog.Client
-	if config.IsMoynalogEnabled() {
-		var err error
-		moynalogClient, err = moynalog.NewClient(config.MoynalogUrl(), config.MoynalogUsername(), config.MoynalogPassword(), config.MoynalogProxyURL())
-		if err != nil {
-			log.Fatalf("Moynalog initialization error: %v", err)
-		}
-
-		slog.Info("Moynalog authentication successful")
-	}
-
 	tm := translation.GetInstance()
 	err := tm.InitTranslations("./translations", config.DefaultLanguage())
 	if err != nil {
@@ -74,19 +58,24 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	topupInputCache := cache.NewCache(3 * time.Minute)
 	cache := cache.NewCache(30 * time.Minute)
 	customerRepository := database.NewCustomerRepository(pool)
 	purchaseRepository := database.NewPurchaseRepository(pool)
 	referralRepository := database.NewReferralRepository(pool)
 	topupRepository := database.NewTrafficTopupRepository(pool)
+	deviceTopupRepository := database.NewDeviceTopupRepository(pool)
 	auditLogRepository := database.NewAdminAuditLogRepository(pool)
 	webhookInboxRepository := database.NewWebhookInboxRepository(pool)
 	activityRepository := database.NewActivityRepository(pool)
 	notificationLogRepository := database.NewNotificationLogRepository(pool)
 
-	cryptoPayClient := cryptopay.NewCryptoPayClient(config.CryptoPayUrl(), config.CryptoPayToken())
 	remnawaveClient := remnawave.NewClient(config.RemnawaveUrl(), config.RemnawaveToken(), config.RemnawaveMode())
-	yookasaClient := yookasa.NewClient(config.YookasaUrl(), config.YookasaShopId(), config.YookasaSecretKey())
+
+	var rollypayClient *rollypay.Client
+	if config.IsRollyPayEnabled() {
+		rollypayClient = rollypay.NewClient(config.RollyPayAPIKey(), config.RollyPaySigningSecret(), config.RollyPayTerminalID())
+	}
 	botOpts := []bot.Option{bot.WithWorkers(3)}
 	if proxyStr := config.TelegramProxyURL(); proxyStr != "" {
 		proxyURL, parseErr := url.Parse(proxyStr)
@@ -105,13 +94,7 @@ func main() {
 		panic(err)
 	}
 
-	paymentService := payment.NewPaymentService(tm, purchaseRepository, remnawaveClient, customerRepository, b, cryptoPayClient, yookasaClient, referralRepository, cache, moynalogClient, topupRepository)
-
-	cronScheduler := setupInvoiceChecker(purchaseRepository, cryptoPayClient, paymentService, yookasaClient)
-	if cronScheduler != nil {
-		cronScheduler.Start()
-		defer cronScheduler.Stop()
-	}
+	paymentService := payment.NewPaymentService(tm, purchaseRepository, remnawaveClient, customerRepository, b, rollypayClient, referralRepository, cache, topupRepository)
 
 	subService := notification.NewSubscriptionService(customerRepository, purchaseRepository, paymentService, b, tm, notificationLogRepository)
 
@@ -124,7 +107,7 @@ func main() {
 	trafficCron.Start()
 	defer trafficCron.Stop()
 
-	topupCleanupCron := setupTopupCleanup(topupRepository)
+	topupCleanupCron := setupTopupCleanup(topupRepository, deviceTopupRepository)
 	topupCleanupCron.Start()
 	defer topupCleanupCron.Stop()
 
@@ -143,9 +126,16 @@ func main() {
 		tributeClient = tribute.NewClient(paymentService, customerRepository, topupRepository, webhookInboxRepository, remnawaveClient, b, tm)
 	}
 
+	// rollypayWebhookClient is likewise nil when RollyPay isn't configured; every consumer
+	// (webhook route, retry cron, admin webapp) treats that as optional, same as tributeClient.
+	var rollypayWebhookClient *rollypay.WebhookClient
+	if config.IsRollyPayEnabled() {
+		rollypayWebhookClient = rollypay.NewWebhookClient(rollypayClient, paymentService, purchaseRepository, topupRepository, deviceTopupRepository, webhookInboxRepository, remnawaveClient, b, tm)
+	}
+
 	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, notificationLogRepository, remnawaveClient, syncService, b, tm)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, cryptoPayClient, yookasaClient, referralRepository, cache, remnawaveClient, topupRepository)
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, topupInputCache)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
@@ -195,19 +185,22 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopup, bot.MatchTypeExact, h.TopupCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopupSelect, bot.MatchTypePrefix, h.TopupSelectCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopupCancel, bot.MatchTypePrefix, h.TopupCancelCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackTopupCustom, bot.MatchTypeExact, h.TopupCustomCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackStatus, bot.MatchTypeExact, h.StatusCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevices, bot.MatchTypeExact, h.DevicesCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesDeleteDevice, bot.MatchTypePrefix, h.DevicesDeleteDeviceCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesReset, bot.MatchTypeExact, h.DevicesResetCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesResetConfirm, bot.MatchTypeExact, h.DevicesResetConfirmCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDeviceBuy, bot.MatchTypeExact, h.DeviceBuyCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackPayment, bot.MatchTypePrefix, h.PaymentCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
-	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-		return update.PreCheckoutQuery != nil
-	}, h.PreCheckoutCallbackHandler, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 
 	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-		return update.Message != nil && update.Message.SuccessfulPayment != nil
-	}, h.SuccessPaymentHandler, h.SuspiciousUserFilterMiddleware)
+		if update.Message == nil || update.Message.Text == "" {
+			return false
+		}
+		_, ok := h.TopupAwaitingInput(update.Message.From.ID)
+		return ok
+	}, h.TopupCustomAmountTextHandler, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 
 	mux := http.NewServeMux()
 	mux.Handle("/healthcheck", fullHealthHandler(pool, remnawaveClient))
@@ -218,10 +211,17 @@ func main() {
 		defer webhookRetryCron.Stop()
 	}
 
+	if rollypayWebhookClient != nil {
+		mux.Handle(config.GetRollyPayWebHookUrl(), rollypayWebhookClient.WebHookHandler())
+		rollypayRetryCron := setupRollyPayRetryCron(rollypayWebhookClient)
+		rollypayRetryCron.Start()
+		defer rollypayRetryCron.Stop()
+	}
+
 	if config.IsAdminWebAppEnabled() {
 		webappHandler := webapp.NewHandler(
 			customerRepository, purchaseRepository, referralRepository, auditLogRepository,
-			webhookInboxRepository, activityRepository, notificationLogRepository, remnawaveClient, tributeClient, opsService,
+			webhookInboxRepository, activityRepository, notificationLogRepository, remnawaveClient, tributeClient, rollypayWebhookClient, opsService,
 			subService, trafficSvc, pool,
 			webapp.BuildInfo{Version: Version, Commit: Commit, BuildDate: BuildDate},
 		)
@@ -375,7 +375,7 @@ func setupTopupIntegrityCron(svc *notification.TopupIntegrityService) *cron.Cron
 	return c
 }
 
-func setupTopupCleanup(topupRepository *database.TrafficTopupRepository) *cron.Cron {
+func setupTopupCleanup(topupRepository *database.TrafficTopupRepository, deviceTopupRepository *database.DeviceTopupRepository) *cron.Cron {
 	c := cron.New()
 	_, err := c.AddFunc("0 * * * *", func() { // every hour
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -383,10 +383,14 @@ func setupTopupCleanup(topupRepository *database.TrafficTopupRepository) *cron.C
 		n, err := topupRepository.ExpireOldPending(ctx, 2*time.Hour)
 		if err != nil {
 			slog.Error("topup cleanup: expire old pending", "error", err)
-			return
-		}
-		if n > 0 {
+		} else if n > 0 {
 			slog.Info("topup cleanup: expired stale pending records", "count", n)
+		}
+		dn, err := deviceTopupRepository.ExpireOldPending(ctx, 2*time.Hour)
+		if err != nil {
+			slog.Error("device topup cleanup: expire old pending", "error", err)
+		} else if dn > 0 {
+			slog.Info("device topup cleanup: expired stale pending records", "count", dn)
 		}
 	})
 	if err != nil {
@@ -408,6 +412,19 @@ func setupWebhookRetryCron(tributeClient *tribute.Client) *cron.Cron {
 	return c
 }
 
+func setupRollyPayRetryCron(rollypayClient *rollypay.WebhookClient) *cron.Cron {
+	c := cron.New()
+	_, err := c.AddFunc("*/10 * * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		rollypayClient.RetryFailed(ctx)
+	})
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
 func setupTrafficWarningCron(svc *notification.TrafficWarningService) *cron.Cron {
 	c := cron.New()
 	_, err := c.AddFunc("0 12 * * *", func() {
@@ -419,155 +436,4 @@ func setupTrafficWarningCron(svc *notification.TrafficWarningService) *cron.Cron
 		panic(err)
 	}
 	return c
-}
-
-func setupInvoiceChecker(
-	purchaseRepository *database.PurchaseRepository,
-	cryptoPayClient *cryptopay.Client,
-	paymentService *payment.PaymentService,
-	yookasaClient *yookasa.Client) *cron.Cron {
-	if !config.IsYookasaEnabled() && !config.IsCryptoPayEnabled() {
-		return nil
-	}
-	c := cron.New(cron.WithSeconds())
-
-	if config.IsCryptoPayEnabled() {
-		_, err := c.AddFunc("*/5 * * * * *", func() {
-			ctx := context.Background()
-			checkCryptoPayInvoice(ctx, purchaseRepository, cryptoPayClient, paymentService)
-		})
-
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	if config.IsYookasaEnabled() {
-		_, err := c.AddFunc("*/5 * * * * *", func() {
-			ctx := context.Background()
-			checkYookasaInvoice(ctx, purchaseRepository, yookasaClient, paymentService)
-		})
-
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	return c
-}
-
-func checkYookasaInvoice(
-	ctx context.Context,
-	purchaseRepository *database.PurchaseRepository,
-	yookasaClient *yookasa.Client,
-	paymentService *payment.PaymentService,
-) {
-	pendingPurchases, err := purchaseRepository.FindByInvoiceTypeAndStatus(
-		ctx,
-		database.InvoiceTypeYookasa,
-		database.PurchaseStatusPending,
-	)
-	if err != nil {
-		log.Printf("Error finding pending purchases: %v", err)
-		return
-	}
-	if len(*pendingPurchases) == 0 {
-		return
-	}
-
-	for _, purchase := range *pendingPurchases {
-
-		invoice, err := yookasaClient.GetPayment(ctx, *purchase.YookasaID)
-
-		if err != nil {
-			slog.Error("Error getting invoice", "invoiceId", purchase.YookasaID, "error", err)
-			continue
-		}
-
-		if invoice.IsCancelled() {
-			err := paymentService.CancelYookassaPayment(purchase.ID)
-			if err != nil {
-				slog.Error("Error canceling invoice", "invoiceId", invoice.ID, "purchaseId", purchase.ID, "error", err)
-			}
-			continue
-		}
-
-		if !invoice.Paid {
-			continue
-		}
-
-		purchaseId, err := strconv.Atoi(invoice.Metadata["purchaseId"])
-		if err != nil {
-			slog.Error("Error parsing purchaseId", "invoiceId", invoice.ID, "error", err)
-			continue
-		}
-		ctxWithValue := context.WithValue(ctx, remnawave.CtxKeyUsername, invoice.Metadata["username"])
-		err = paymentService.ProcessPurchaseById(ctxWithValue, int64(purchaseId))
-		if err != nil {
-			slog.Error("Error processing invoice", "invoiceId", invoice.ID, "purchaseId", purchaseId, "error", err)
-		} else {
-			slog.Info("Invoice processed", "invoiceId", invoice.ID, "purchaseId", purchaseId)
-		}
-
-	}
-}
-
-func checkCryptoPayInvoice(
-	ctx context.Context,
-	purchaseRepository *database.PurchaseRepository,
-	cryptoPayClient *cryptopay.Client,
-	paymentService *payment.PaymentService,
-) {
-	pendingPurchases, err := purchaseRepository.FindByInvoiceTypeAndStatus(
-		ctx,
-		database.InvoiceTypeCrypto,
-		database.PurchaseStatusPending,
-	)
-	if err != nil {
-		log.Printf("Error finding pending purchases: %v", err)
-		return
-	}
-	if len(*pendingPurchases) == 0 {
-		return
-	}
-
-	var invoiceIDs []string
-
-	for _, purchase := range *pendingPurchases {
-		if purchase.CryptoInvoiceID != nil {
-			invoiceIDs = append(invoiceIDs, fmt.Sprintf("%d", *purchase.CryptoInvoiceID))
-		}
-	}
-
-	if len(invoiceIDs) == 0 {
-		return
-	}
-
-	stringInvoiceIDs := strings.Join(invoiceIDs, ",")
-	invoices, err := cryptoPayClient.GetInvoices("", "", "", stringInvoiceIDs, 0, 0)
-	if err != nil {
-		log.Printf("Error getting invoices: %v", err)
-		return
-	}
-
-	for _, invoice := range *invoices {
-		if invoice.InvoiceID != nil && invoice.IsPaid() {
-			payload := strings.Split(invoice.Payload, "&")
-			purchaseID, err := strconv.Atoi(strings.Split(payload[0], "=")[1])
-			if err != nil {
-				slog.Error("crypto: invalid purchaseID in payload", "payload", payload[0], "error", err)
-				continue
-			}
-			username := strings.Split(payload[1], "=")[1]
-			ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, username)
-			err = paymentService.ProcessPurchaseById(ctxWithUsername, int64(purchaseID))
-			if err != nil {
-				slog.Error("Error processing invoice", "invoiceId", invoice.InvoiceID, "error", err)
-			} else {
-				slog.Info("Invoice processed", "invoiceId", invoice.InvoiceID, "purchaseId", purchaseID)
-			}
-
-		}
-	}
-
 }

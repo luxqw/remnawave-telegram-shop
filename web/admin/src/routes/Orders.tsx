@@ -10,7 +10,7 @@ import { DetailModal } from "../components/DetailModal";
 import { formatMoney } from "../lib/format";
 
 const STATUSES = ["", "new", "pending", "paid", "cancel"];
-const TYPES = ["", "crypto", "yookasa", "telegram", "tribute"];
+const TYPES = ["", "crypto", "yookasa", "telegram", "tribute", "rollypay"];
 
 export function Orders() {
   const [page, setPage] = useState<Page<Purchase> | null>(null);

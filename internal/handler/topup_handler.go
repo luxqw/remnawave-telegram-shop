@@ -12,6 +12,7 @@ import (
 
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
+	"remnawave-tg-shop-bot/internal/rollypay"
 )
 
 func (h Handler) TopupCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -40,6 +41,8 @@ func (h Handler) TopupCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		})
 		return
 	}
+
+	h.topupAwaitingInput.Delete(telegramID)
 
 	pending, err := h.topupRepository.FindRecentPendingByTelegramID(ctx, telegramID, 30*time.Minute)
 	if err != nil {
@@ -73,37 +76,140 @@ func (h Handler) TopupSelectCallbackHandler(ctx context.Context, b *bot.Bot, upd
 		slog.Error("topup select: invalid gb param", "data", update.CallbackQuery.Data, "error", err)
 		return
 	}
-	pkg := config.TopupPackageByGB(gb)
-	if pkg == nil {
+	tier := config.GBTopupTierByGB(gb)
+	if tier == nil {
 		slog.Error("topup select: unknown gb amount", "gb", gb)
 		return
 	}
-	_, err = h.topupRepository.Create(ctx, &database.TrafficTopup{
-		TelegramID: telegramID,
-		GBAmount:   gb,
-		Status:     database.TopupStatusPending,
+	h.createTopupInvoice(ctx, b, msg.Chat.ID, msg.ID, telegramID, langCode, gb, tier.PriceRUB)
+}
+
+// TopupCustomCallbackHandler prompts the user to type how much GB they want, then marks them as
+// awaiting a free-text reply (picked up by TopupCustomAmountTextHandler).
+func (h Handler) TopupCustomCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	telegramID := update.CallbackQuery.From.ID
+	langCode := update.CallbackQuery.From.LanguageCode
+	msg := update.CallbackQuery.Message.Message
+
+	minGB, maxGB := config.GBTopupCustomMinGB(), config.GBTopupCustomMaxGB()
+	prompt := fmt.Sprintf(h.translation.GetText(langCode, "topup_custom_prompt"), minGB, maxGB)
+
+	message, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    msg.Chat.ID,
+		MessageID: msg.ID,
+		ParseMode: models.ParseModeHTML,
+		Text:      prompt,
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackTopup)},
+		}},
 	})
 	if err != nil {
-		slog.Error("topup select: create pending record", "error", err)
+		slog.Error("topup custom: edit prompt message", "error", err)
+		return
+	}
+	h.topupAwaitingInput.Set(telegramID, message.ID)
+}
+
+// TopupAwaitingInput reports whether telegramID currently has an open custom-GB-amount prompt —
+// used by main.go's RegisterHandlerMatchFunc to decide whether an incoming text message should be
+// routed to TopupCustomAmountTextHandler.
+func (h Handler) TopupAwaitingInput(telegramID int64) (int, bool) {
+	return h.topupAwaitingInput.Get(telegramID)
+}
+
+// TopupCustomAmountTextHandler parses the free-text GB amount, validates bounds, and starts the
+// same create-row -> CreatePayment -> show-pay-button flow the preset tiers use.
+func (h Handler) TopupCustomAmountTextHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	telegramID := update.Message.From.ID
+	langCode := update.Message.From.LanguageCode
+	promptMessageID, ok := h.topupAwaitingInput.Get(telegramID)
+	if !ok {
+		return
+	}
+	h.topupAwaitingInput.Delete(telegramID)
+
+	minGB, maxGB := config.GBTopupCustomMinGB(), config.GBTopupCustomMaxGB()
+
+	gb, err := strconv.Atoi(update.Message.Text)
+	if err != nil {
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-			ChatID: msg.Chat.ID, MessageID: msg.ID, ParseMode: models.ParseModeHTML,
-			Text: h.translation.GetText(langCode, "topup_error"),
+			ChatID:    update.Message.Chat.ID,
+			MessageID: promptMessageID,
+			ParseMode: models.ParseModeHTML,
+			Text:      h.translation.GetText(langCode, "topup_custom_invalid"),
 			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackTopup)},
 			}},
 		})
 		return
 	}
-	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb)
-	btnLabel := fmt.Sprintf("+%d GB", pkg.GBAmount)
+	if gb < minGB || gb > maxGB {
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    update.Message.Chat.ID,
+			MessageID: promptMessageID,
+			ParseMode: models.ParseModeHTML,
+			Text:      fmt.Sprintf(h.translation.GetText(langCode, "topup_custom_out_of_range"), minGB, maxGB),
+			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackTopup)},
+			}},
+		})
+		return
+	}
+
+	price := gb * config.GBTopupCustomPricePerGB()
+	h.createTopupInvoice(ctx, b, update.Message.Chat.ID, promptMessageID, telegramID, langCode, gb, price)
+}
+
+// createTopupInvoice creates the pending traffic_topups row, asks RollyPay for a payment, and
+// shows the resulting pay_url — the shared tail end of both the preset-tier and custom-amount
+// flows.
+func (h Handler) createTopupInvoice(ctx context.Context, b *bot.Bot, chatID int64, messageID int, telegramID int64, langCode string, gb, priceRUB int) {
+	topupID, err := h.topupRepository.Create(ctx, &database.TrafficTopup{
+		TelegramID:  telegramID,
+		GBAmount:    gb,
+		PriceAmount: float64(priceRUB),
+		Currency:    "RUB",
+		Status:      database.TopupStatusPending,
+	})
+	if err != nil {
+		slog.Error("topup: create pending record", "error", err)
+		h.showTopupError(ctx, b, chatID, messageID, langCode)
+		return
+	}
+
+	paymentResp, err := h.rollypayClient.CreatePayment(ctx, rollypay.CreatePaymentRequest{
+		Amount:      fmt.Sprintf("%d.00", priceRUB),
+		OrderID:     fmt.Sprintf("topup-%d", topupID),
+		Description: fmt.Sprintf("+%d GB traffic top-up", gb),
+	})
+	if err != nil {
+		slog.Error("topup: create rollypay payment", "error", err, "topup_id", topupID)
+		if expireErr := h.topupRepository.ExpireByID(ctx, topupID); expireErr != nil {
+			slog.Error("topup: expire orphaned pending record", "error", expireErr, "topup_id", topupID)
+		}
+		h.showTopupError(ctx, b, chatID, messageID, langCode)
+		return
+	}
+
+	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb, priceRUB)
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    msg.Chat.ID,
-		MessageID: msg.ID,
+		ChatID:    chatID,
+		MessageID: messageID,
 		ParseMode: models.ParseModeHTML,
 		Text:      disclaimer,
 		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-			{{Text: btnLabel, URL: pkg.URL}},
+			{{Text: h.translation.GetButton(langCode, "pay_button").Text, URL: paymentResp.PayURL}},
 			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackTopup)},
+		}},
+	})
+}
+
+func (h Handler) showTopupError(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string) {
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID: chatID, MessageID: messageID, ParseMode: models.ParseModeHTML,
+		Text: h.translation.GetText(langCode, "topup_error"),
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
 		}},
 	})
 }
@@ -124,12 +230,15 @@ func (h Handler) TopupCancelCallbackHandler(ctx context.Context, b *bot.Bot, upd
 }
 
 func (h Handler) showTopupPackages(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string) {
-	packages := config.AllTopupPackages()
+	tiers := config.GBTopupTiers()
 	var rows [][]models.InlineKeyboardButton
-	for _, pkg := range packages {
-		label := fmt.Sprintf("+%d GB", pkg.GBAmount)
-		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: fmt.Sprintf("%s?gb=%d", CallbackTopupSelect, pkg.GBAmount)}})
+	for _, tier := range tiers {
+		label := fmt.Sprintf("+%d GB — %d ₽", tier.GBAmount, tier.PriceRUB)
+		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: fmt.Sprintf("%s?gb=%d", CallbackTopupSelect, tier.GBAmount)}})
 	}
+	rows = append(rows, []models.InlineKeyboardButton{
+		{Text: h.translation.GetButton(langCode, "topup_custom_button").Text, CallbackData: CallbackTopupCustom},
+	})
 	rows = append(rows, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      chatID,

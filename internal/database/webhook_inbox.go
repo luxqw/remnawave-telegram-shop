@@ -21,6 +21,7 @@ type WebhookInbox struct {
 	ID          int64
 	Payload     []byte
 	EventType   string
+	Provider    string
 	Status      string
 	Attempts    int
 	ErrorMsg    *string
@@ -36,10 +37,10 @@ func NewWebhookInboxRepository(pool *pgxpool.Pool) *WebhookInboxRepository {
 	return &WebhookInboxRepository{pool: pool}
 }
 
-func (r *WebhookInboxRepository) Create(ctx context.Context, payload []byte, eventType string) (int64, error) {
+func (r *WebhookInboxRepository) Create(ctx context.Context, payload []byte, eventType, provider string) (int64, error) {
 	q, args, err := sq.Insert("webhook_inbox").
-		Columns("payload", "event_type", "status").
-		Values(payload, eventType, WebhookStatusPending).
+		Columns("payload", "event_type", "provider", "status").
+		Values(payload, eventType, provider, WebhookStatusPending).
 		Suffix("RETURNING id").
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
@@ -83,11 +84,14 @@ func (r *WebhookInboxRepository) MarkFailed(ctx context.Context, id int64, errMs
 	return err
 }
 
-func (r *WebhookInboxRepository) FindRetryable(ctx context.Context, maxAttempts int, minAge time.Duration) ([]WebhookInbox, error) {
+// FindRetryable returns failed rows scoped to a single provider, so each provider's retry cron
+// only ever re-dispatches payloads it knows how to unmarshal.
+func (r *WebhookInboxRepository) FindRetryable(ctx context.Context, provider string, maxAttempts int, minAge time.Duration) ([]WebhookInbox, error) {
 	cutoff := time.Now().Add(-minAge)
-	q, args, err := sq.Select("id", "payload", "event_type", "status", "attempts", "error_msg", "created_at", "processed_at").
+	q, args, err := sq.Select("id", "payload", "event_type", "provider", "status", "attempts", "error_msg", "created_at", "processed_at").
 		From("webhook_inbox").
 		Where(sq.And{
+			sq.Eq{"provider": provider},
 			sq.Eq{"status": WebhookStatusFailed},
 			sq.Lt{"attempts": maxAttempts},
 			sq.Lt{"created_at": cutoff},
@@ -107,7 +111,7 @@ func (r *WebhookInboxRepository) FindRetryable(ctx context.Context, maxAttempts 
 	var results []WebhookInbox
 	for rows.Next() {
 		var wh WebhookInbox
-		if err := rows.Scan(&wh.ID, &wh.Payload, &wh.EventType, &wh.Status, &wh.Attempts, &wh.ErrorMsg, &wh.CreatedAt, &wh.ProcessedAt); err != nil {
+		if err := rows.Scan(&wh.ID, &wh.Payload, &wh.EventType, &wh.Provider, &wh.Status, &wh.Attempts, &wh.ErrorMsg, &wh.CreatedAt, &wh.ProcessedAt); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		results = append(results, wh)
@@ -115,10 +119,10 @@ func (r *WebhookInboxRepository) FindRetryable(ctx context.Context, maxAttempts 
 	return results, rows.Err()
 }
 
-const webhookInboxSelectCols = "id, payload, event_type, status, attempts, error_msg, created_at, processed_at"
+const webhookInboxSelectCols = "id, payload, event_type, provider, status, attempts, error_msg, created_at, processed_at"
 
 func scanWebhookInbox(row interface{ Scan(...interface{}) error }, wh *WebhookInbox) error {
-	return row.Scan(&wh.ID, &wh.Payload, &wh.EventType, &wh.Status, &wh.Attempts, &wh.ErrorMsg, &wh.CreatedAt, &wh.ProcessedAt)
+	return row.Scan(&wh.ID, &wh.Payload, &wh.EventType, &wh.Provider, &wh.Status, &wh.Attempts, &wh.ErrorMsg, &wh.CreatedAt, &wh.ProcessedAt)
 }
 
 // FindByID fetches a single webhook_inbox row, used by the admin webapp's retry endpoint and

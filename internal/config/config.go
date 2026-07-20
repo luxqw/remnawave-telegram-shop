@@ -13,33 +13,35 @@ import (
 )
 
 // TopupPackageConfig holds configuration for a single traffic top-up package.
+// Deprecated: this is the legacy Tribute-Digital-Product-backed topup config, kept alive only so
+// existing TOPUP_ENABLED deployments keep working. New topups use GBTopupTier + RollyPay instead.
 type TopupPackageConfig struct {
 	GBAmount  int
 	URL       string
 	ProductID int
 }
 
+// GBTopupTier is one bot-owned, bot-priced GB top-up preset sold through RollyPay. Unlike
+// TopupPackageConfig, the bot itself knows the price (RollyPay has no product catalog like
+// Tribute's Digital Products) — needed because the bot builds the payment amount itself.
+type GBTopupTier struct {
+	GBAmount int
+	PriceRUB int
+}
+
 type config struct {
 	telegramToken                                             string
 	price1, price3, price6, price12                           int
-	starsPrice1, starsPrice3, starsPrice6, starsPrice12       int
 	remnawaveUrl, remnawaveToken, remnawaveMode, remnawaveTag string
 	defaultLanguage                                           string
 	databaseURL                                               string
-	cryptoPayURL, cryptoPayToken                              string
 	botURL                                                    string
-	yookasaURL, yookasaShopId, yookasaSecretKey, yookasaEmail string
-	moynalogURL, moynalogUsername, moynalogPassword           string
 	trafficLimit, trialTrafficLimit                           int
 	feedbackURL                                               string
 	channelURL                                                string
 	serverStatusURL                                           string
 	supportURL                                                string
 	tosURL                                                    string
-	isYookasaEnabled                                          bool
-	isCryptoEnabled                                           bool
-	isTelegramStarsEnabled                                    bool
-	isMoynalogEnabled                                         bool
 	adminTelegramId                                           int64
 	trialDays                                                 int
 	trialRemnawaveTag                                         string
@@ -49,12 +51,16 @@ type config struct {
 	enableAutoPayment                                         bool
 	healthCheckPort                                           int
 	tributeWebhookUrl, tributeAPIKey, tributePaymentUrl       string
+	rollypayEnabled                                           bool
+	rollypayAPIKey, rollypaySigningSecret, rollypayTerminalID string
+	rollypayWebhookUrl                                        string
+	rollypaySuccessRedirectUrl, rollypayFailRedirectUrl       string
+	rollypayTestMode                                          bool
 	isWebAppLinkEnabled                                       bool
 	daysInMonth                                               int
 	externalSquadUUID                                         uuid.UUID
 	blockedTelegramIds                                        map[int64]bool
 	whitelistedTelegramIds                                    map[int64]bool
-	requirePaidPurchaseForStars                               bool
 	trialInternalSquads                                       map[uuid.UUID]uuid.UUID
 	trialExternalSquadUUID                                    uuid.UUID
 	remnawaveHeaders                                          map[string]string
@@ -66,6 +72,10 @@ type config struct {
 	topupPackage25                                            TopupPackageConfig
 	topupPackage50                                            TopupPackageConfig
 	topupPackages                                             map[int]TopupPackageConfig
+	gbTopupTiers                                              []GBTopupTier
+	gbTopupCustomPricePerGB                                   int
+	gbTopupCustomMinGB, gbTopupCustomMaxGB                    int
+	deviceSlotPriceRUB                                        int
 	adminWebAppEnabled                                        bool
 	adminWebAppJWTSecret                                      string
 	adminWebAppURL                                            string
@@ -98,6 +108,38 @@ func GetTributeAPIKey() string {
 
 func GetTributePaymentUrl() string {
 	return conf.tributePaymentUrl
+}
+
+func IsRollyPayEnabled() bool {
+	return conf.rollypayEnabled
+}
+
+func RollyPayAPIKey() string {
+	return conf.rollypayAPIKey
+}
+
+func RollyPaySigningSecret() string {
+	return conf.rollypaySigningSecret
+}
+
+func RollyPayTerminalID() string {
+	return conf.rollypayTerminalID
+}
+
+func GetRollyPayWebHookUrl() string {
+	return conf.rollypayWebhookUrl
+}
+
+func RollyPaySuccessRedirectUrl() string {
+	return conf.rollypaySuccessRedirectUrl
+}
+
+func RollyPayFailRedirectUrl() string {
+	return conf.rollypayFailRedirectUrl
+}
+
+func RollyPayTestMode() bool {
+	return conf.rollypayTestMode
 }
 
 func GetReferralDays() int {
@@ -161,10 +203,6 @@ func TosURL() string {
 	return conf.tosURL
 }
 
-func YookasaEmail() string {
-	return conf.yookasaEmail
-}
-
 func Price1() int {
 	return conf.price1
 }
@@ -204,20 +242,6 @@ func Price(month int) int {
 	}
 }
 
-func StarsPrice(month int) int {
-	switch month {
-	case 1:
-		return conf.starsPrice1
-	case 3:
-		return conf.starsPrice3
-	case 6:
-		return conf.starsPrice6
-	case 12:
-		return conf.starsPrice12
-	default:
-		return conf.starsPrice1
-	}
-}
 func TelegramToken() string {
 	return conf.telegramToken
 }
@@ -226,9 +250,6 @@ func TelegramProxyURL() string {
 	return envStringDefault("TELEGRAM_PROXY_URL", "")
 }
 
-func MoynalogProxyURL() string {
-	return envStringDefault("MOYNALOG_PROXY_URL", "")
-}
 func RemnawaveUrl() string {
 	return conf.remnawaveUrl
 }
@@ -241,45 +262,14 @@ func RemnawaveToken() string {
 func RemnawaveMode() string {
 	return conf.remnawaveMode
 }
-func CryptoPayUrl() string {
-	return conf.cryptoPayURL
-}
-func CryptoPayToken() string {
-	return conf.cryptoPayToken
-}
 func BotURL() string {
 	return conf.botURL
 }
 func SetBotURL(botURL string) {
 	conf.botURL = botURL
 }
-func YookasaUrl() string {
-	return conf.yookasaURL
-}
-func YookasaShopId() string {
-	return conf.yookasaShopId
-}
-func YookasaSecretKey() string {
-	return conf.yookasaSecretKey
-}
 func TrafficLimit() int {
 	return conf.trafficLimit * bytesInGigabyte
-}
-
-func IsCryptoPayEnabled() bool {
-	return conf.isCryptoEnabled
-}
-
-func IsYookasaEnabled() bool {
-	return conf.isYookasaEnabled
-}
-
-func IsTelegramStarsEnabled() bool {
-	return conf.isTelegramStarsEnabled
-}
-
-func RequirePaidPurchaseForStars() bool {
-	return conf.requirePaidPurchaseForStars
 }
 
 func GetAdminTelegramId() int64 {
@@ -332,25 +322,40 @@ func TopupPackageByGB(gb int) *TopupPackageConfig {
 	return nil
 }
 
+// GBTopupTiers returns the configured bot-owned, RollyPay-priced GB top-up presets.
+func GBTopupTiers() []GBTopupTier {
+	return conf.gbTopupTiers
+}
+
+func GBTopupTierByGB(gb int) *GBTopupTier {
+	for _, tier := range conf.gbTopupTiers {
+		if tier.GBAmount == gb {
+			return &tier
+		}
+	}
+	return nil
+}
+
+// GBTopupCustomPricePerGB is the RUB price per 1 GB for the free-text "custom amount" flow.
+func GBTopupCustomPricePerGB() int {
+	return conf.gbTopupCustomPricePerGB
+}
+
+func GBTopupCustomMinGB() int {
+	return conf.gbTopupCustomMinGB
+}
+
+func GBTopupCustomMaxGB() int {
+	return conf.gbTopupCustomMaxGB
+}
+
+func DeviceSlotPriceRUB() int {
+	return conf.deviceSlotPriceRUB
+}
+
 const bytesInGigabyte = 1073741824
 
 func BytesInGigabyte() int { return bytesInGigabyte }
-
-func MoynalogUrl() string {
-	return conf.moynalogURL
-}
-
-func MoynalogUsername() string {
-	return conf.moynalogUsername
-}
-
-func MoynalogPassword() string {
-	return conf.moynalogPassword
-}
-
-func IsMoynalogEnabled() bool {
-	return conf.isMoynalogEnabled
-}
 
 func IsAdminWebAppEnabled() bool {
 	return conf.adminWebAppEnabled
@@ -479,17 +484,6 @@ func InitConfig() {
 	conf.price6 = mustEnvInt("PRICE_6")
 	conf.price12 = mustEnvInt("PRICE_12")
 
-	conf.isTelegramStarsEnabled = envBool("TELEGRAM_STARS_ENABLED")
-	if conf.isTelegramStarsEnabled {
-		conf.starsPrice1 = envIntDefault("STARS_PRICE_1", conf.price1)
-		conf.starsPrice3 = envIntDefault("STARS_PRICE_3", conf.price3)
-		conf.starsPrice6 = envIntDefault("STARS_PRICE_6", conf.price6)
-		conf.starsPrice12 = envIntDefault("STARS_PRICE_12", conf.price12)
-
-	}
-
-	conf.requirePaidPurchaseForStars = envBool("REQUIRE_PAID_PURCHASE_FOR_STARS")
-
 	conf.remnawaveUrl = mustEnv("REMNAWAVE_URL")
 
 	conf.remnawaveMode = func() string {
@@ -508,20 +502,6 @@ func InitConfig() {
 	conf.remnawaveToken = mustEnv("REMNAWAVE_TOKEN")
 
 	conf.databaseURL = mustEnv("DATABASE_URL")
-
-	conf.isCryptoEnabled = envBool("CRYPTO_PAY_ENABLED")
-	if conf.isCryptoEnabled {
-		conf.cryptoPayURL = mustEnv("CRYPTO_PAY_URL")
-		conf.cryptoPayToken = mustEnv("CRYPTO_PAY_TOKEN")
-	}
-
-	conf.isYookasaEnabled = envBool("YOOKASA_ENABLED")
-	if conf.isYookasaEnabled {
-		conf.yookasaURL = mustEnv("YOOKASA_URL")
-		conf.yookasaShopId = mustEnv("YOOKASA_SHOP_ID")
-		conf.yookasaSecretKey = mustEnv("YOOKASA_SECRET_KEY")
-		conf.yookasaEmail = mustEnv("YOOKASA_EMAIL")
-	}
 
 	conf.trafficLimit = mustEnvInt("TRAFFIC_LIMIT")
 	conf.referralDays = mustEnvInt("REFERRAL_DAYS")
@@ -556,6 +536,27 @@ func InitConfig() {
 	if conf.tributeWebhookUrl != "" {
 		conf.tributeAPIKey = mustEnv("TRIBUTE_API_KEY")
 		conf.tributePaymentUrl = mustEnv("TRIBUTE_PAYMENT_URL")
+	}
+
+	conf.rollypayEnabled = envBool("ROLLYPAY_ENABLED")
+	if conf.rollypayEnabled {
+		conf.rollypayAPIKey = mustEnv("ROLLYPAY_API_KEY")
+		conf.rollypaySigningSecret = mustEnv("ROLLYPAY_SIGNING_SECRET")
+		conf.rollypayTerminalID = mustEnv("ROLLYPAY_TERMINAL_ID")
+		conf.rollypayWebhookUrl = mustEnv("ROLLYPAY_WEBHOOK_URL")
+		conf.rollypaySuccessRedirectUrl = envStringDefault("ROLLYPAY_SUCCESS_REDIRECT_URL", "")
+		conf.rollypayFailRedirectUrl = envStringDefault("ROLLYPAY_FAIL_REDIRECT_URL", "")
+		conf.rollypayTestMode = envBool("ROLLYPAY_TEST_MODE")
+
+		conf.gbTopupTiers = parseGBTopupTiers(mustEnv("GB_TOPUP_TIERS"))
+		conf.gbTopupCustomPricePerGB = mustEnvInt("GB_TOPUP_CUSTOM_PRICE_PER_GB")
+		conf.gbTopupCustomMinGB = envIntDefault("GB_TOPUP_CUSTOM_MIN_GB", 1)
+		conf.gbTopupCustomMaxGB = envIntDefault("GB_TOPUP_CUSTOM_MAX_GB", 500)
+		if conf.gbTopupCustomMinGB <= 0 || conf.gbTopupCustomMaxGB < conf.gbTopupCustomMinGB {
+			panic(fmt.Sprintf("invalid GB_TOPUP_CUSTOM_MIN_GB/MAX_GB: %d/%d", conf.gbTopupCustomMinGB, conf.gbTopupCustomMaxGB))
+		}
+
+		conf.deviceSlotPriceRUB = mustEnvInt("DEVICE_SLOT_PRICE_RUB")
 	}
 
 	conf.blockedTelegramIds = func() map[int64]bool {
@@ -654,13 +655,6 @@ func InitConfig() {
 		return map[string]string{}
 	}()
 
-	conf.isMoynalogEnabled = envBool("MOYNALOG_ENABLED")
-	if conf.isMoynalogEnabled {
-		conf.moynalogURL = envStringDefault("MOYNALOG_URL", "https://moynalog.ru/api/v1")
-		conf.moynalogUsername = mustEnv("MOYNALOG_USERNAME")
-		conf.moynalogPassword = mustEnv("MOYNALOG_PASSWORD")
-	}
-
 	conf.topupEnabled = envBool("TOPUP_ENABLED")
 	conf.statusEnabled = envBool("STATUS_ENABLED")
 	if conf.topupEnabled {
@@ -689,6 +683,36 @@ func InitConfig() {
 		conf.adminSessionTTLMinutes = envIntDefault("ADMIN_SESSION_TTL_MINUTES", 1440)
 		conf.adminWebAppInitDataMaxAgeHours = envIntDefault("ADMIN_WEBAPP_INITDATA_MAX_AGE_HOURS", 24)
 	}
+}
+
+// parseGBTopupTiers parses "gb:price_rub" pairs separated by commas, e.g. "10:150,25:300,50:500" —
+// the same comma-delimited convention SQUAD_UUIDS/BLOCKED_TELEGRAM_IDS already use in this file.
+func parseGBTopupTiers(v string) []GBTopupTier {
+	parts := strings.Split(v, ",")
+	tiers := make([]GBTopupTier, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		kv := strings.SplitN(part, ":", 2)
+		if len(kv) != 2 {
+			panic(fmt.Sprintf("invalid GB_TOPUP_TIERS entry %q, expected gb:price_rub", part))
+		}
+		gb, err := strconv.Atoi(strings.TrimSpace(kv[0]))
+		if err != nil {
+			panic(fmt.Sprintf("invalid GB amount in GB_TOPUP_TIERS entry %q: %v", part, err))
+		}
+		price, err := strconv.Atoi(strings.TrimSpace(kv[1]))
+		if err != nil {
+			panic(fmt.Sprintf("invalid price in GB_TOPUP_TIERS entry %q: %v", part, err))
+		}
+		tiers = append(tiers, GBTopupTier{GBAmount: gb, PriceRUB: price})
+	}
+	if len(tiers) == 0 {
+		panic("GB_TOPUP_TIERS is set but contains no valid entries")
+	}
+	return tiers
 }
 
 func parseTopupPackage(gb string) TopupPackageConfig {
