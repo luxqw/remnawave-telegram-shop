@@ -72,12 +72,16 @@ func GetInstance() *Manager {
 	return instance
 }
 
-func (tm *Manager) InitTranslations(translationsDir string, defaultLanguage string) error {
+func (tm *Manager) InitTranslations(translationsDir string, defaultLanguage string, disabledLanguages ...string) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
 	if defaultLanguage != "" {
 		tm.defaultLanguage = defaultLanguage
+	}
+	disabled := make(map[string]bool, len(disabledLanguages))
+	for _, l := range disabledLanguages {
+		disabled[l] = true
 	}
 
 	files, err := os.ReadDir(translationsDir)
@@ -91,6 +95,9 @@ func (tm *Manager) InitTranslations(translationsDir string, defaultLanguage stri
 		}
 
 		langCode := strings.TrimSuffix(file.Name(), ".json")
+		if disabled[langCode] {
+			continue
+		}
 		filePath := filepath.Join(translationsDir, file.Name())
 
 		content, err := os.ReadFile(filePath)

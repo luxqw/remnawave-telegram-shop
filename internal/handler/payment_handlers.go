@@ -81,11 +81,9 @@ func (h Handler) SellCallbackHandler(ctx context.Context, b *bot.Bot, update *mo
 		})
 	}
 
-	if config.GetTributeWebHookUrl() != "" {
-		keyboard = append(keyboard, []models.InlineKeyboardButton{
-			h.translation.GetButton(langCode, "tribute_button").InlineURL(config.GetTributePaymentUrl()),
-		})
-	}
+	// Tribute is intentionally not offered here — it's frozen to auto-renewal for customers who
+	// already have a Tribute subscription (see internal/tribute package doc). New/renewing
+	// purchases only ever go through RollyPay so the customer base migrates there over time.
 
 	keyboard = append(keyboard, []models.InlineKeyboardButton{
 		h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackBuy),
@@ -128,14 +126,35 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 
+	langCode := update.CallbackQuery.From.LanguageCode
+
+	if invoiceType == database.InvoiceTypeRollyPay {
+		pending, err := h.purchaseRepository.FindRecentPendingByCustomerID(ctx, customer.ID, 30*time.Minute)
+		if err != nil {
+			slog.Error("Error checking recent pending purchase", "error", err)
+			return
+		}
+		if pending != nil {
+			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+				ChatID:    callback.Chat.ID,
+				MessageID: callback.ID,
+				ParseMode: models.ParseModeHTML,
+				Text:      h.translation.GetText(langCode, "topup_pending_warning"),
+				ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+					{h.translation.GetButton(langCode, "topup_cancel_button").InlineCallback(fmt.Sprintf("%s?id=%d", CallbackPaymentCancel, pending.ID))},
+					{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+				}},
+			})
+			return
+		}
+	}
+
 	ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, update.CallbackQuery.From.Username)
 	paymentURL, purchaseId, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
 	if err != nil {
 		slog.Error("Error creating payment", "error", err)
 		return
 	}
-
-	langCode := update.CallbackQuery.From.LanguageCode
 
 	message, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 		ChatID:    callback.Chat.ID,
@@ -154,6 +173,35 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 	h.cache.Set(purchaseId, message.ID)
+}
+
+// PaymentCancelCallbackHandler cancels a stuck pending subscription purchase, mirroring
+// TopupCancelCallbackHandler — lets the customer immediately retry instead of waiting out the
+// 30-minute pending window in FindRecentPendingByCustomerID.
+func (h Handler) PaymentCancelCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	langCode := update.CallbackQuery.From.LanguageCode
+	callback := update.CallbackQuery.Message.Message
+	cbData := parseCallbackData(update.CallbackQuery.Data)
+	if idStr, ok := cbData["id"]; ok {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err == nil {
+			if err := h.purchaseRepository.UpdateFields(ctx, id, map[string]interface{}{"status": database.PurchaseStatusCancel}); err != nil {
+				slog.Error("payment cancel: cancel purchase", "id", id, "error", err)
+			}
+		}
+	}
+	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    callback.Chat.ID,
+		MessageID: callback.ID,
+		ParseMode: models.ParseModeHTML,
+		Text:      h.translation.GetText(langCode, "pricing_info"),
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackBuy)},
+		}},
+	})
+	if err != nil {
+		slog.Error("payment cancel: edit message", "error", err)
+	}
 }
 
 func parseCallbackData(data string) map[string]string {

@@ -34,6 +34,7 @@ type config struct {
 	price1, price3, price6, price12                           int
 	remnawaveUrl, remnawaveToken, remnawaveMode, remnawaveTag string
 	defaultLanguage                                           string
+	englishEnabled                                            bool
 	databaseURL                                               string
 	botURL                                                    string
 	trafficLimit, trialTrafficLimit                           int
@@ -98,6 +99,13 @@ func TrialRemnawaveTag() string {
 
 func DefaultLanguage() string {
 	return conf.defaultLanguage
+}
+
+// EnglishEnabled gates whether the "en" translation file gets loaded at all — while false,
+// customers with an English Telegram client fall back to DefaultLanguage instead of seeing
+// (possibly stale) English text. Off by default until a proper in-bot language switcher exists.
+func EnglishEnabled() bool {
+	return conf.englishEnabled
 }
 func GetTributeWebHookUrl() string {
 	return conf.tributeWebhookUrl
@@ -457,6 +465,7 @@ func InitConfig() {
 	}
 
 	conf.defaultLanguage = envStringDefault("DEFAULT_LANGUAGE", "ru")
+	conf.englishEnabled = envBool("ENGLISH_ENABLED")
 
 	conf.daysInMonth = envIntDefault("DAYS_IN_MONTH", 30)
 

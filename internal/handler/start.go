@@ -154,6 +154,10 @@ func (h Handler) resolveConnectButton(lang string) []models.InlineKeyboardButton
 	return []models.InlineKeyboardButton{bd.InlineCallback(CallbackConnect)}
 }
 
+// buildStartKeyboard groups related buttons two-per-row instead of one long vertical stack:
+// subscription-management actions (connect/status/devices/topup) in one cluster, informational
+// links (server status/support/feedback/channel/tos) in another. Buy and trial stay full-width as
+// the primary calls to action.
 func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCode string) [][]models.InlineKeyboardButton {
 	var inlineKeyboard [][]models.InlineKeyboardButton
 
@@ -161,48 +165,58 @@ func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCod
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "trial_button").InlineCallback(CallbackTrial)})
 	}
 
-	inlineKeyboard = append(inlineKeyboard, [][]models.InlineKeyboardButton{{h.translation.GetButton(langCode, "buy_button").InlineCallback(CallbackBuy)}}...)
+	inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "buy_button").InlineCallback(CallbackBuy)})
 
-	if existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) {
-		inlineKeyboard = append(inlineKeyboard, h.resolveConnectButton(langCode))
-	}
+	hasActiveSubscription := existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now())
 
-	if config.TopupEnabled() && existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) && !existingCustomer.IsTrial {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			h.translation.GetButton(langCode, "topup_button").InlineCallback(CallbackTopup),
-		})
-	}
-
-	if existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) {
+	var managementButtons []models.InlineKeyboardButton
+	if hasActiveSubscription {
+		managementButtons = append(managementButtons, h.resolveConnectButton(langCode)...)
 		if config.StatusEnabled() {
-			inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-				h.translation.GetButton(langCode, "status_button").InlineCallback(CallbackStatus),
-			})
+			managementButtons = append(managementButtons, h.translation.GetButton(langCode, "status_button").InlineCallback(CallbackStatus))
 		}
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{
-			h.translation.GetButton(langCode, "devices_button").InlineCallback(CallbackDevices),
-		})
+		managementButtons = append(managementButtons, h.translation.GetButton(langCode, "devices_button").InlineCallback(CallbackDevices))
+		if config.TopupEnabled() && !existingCustomer.IsTrial {
+			managementButtons = append(managementButtons, h.translation.GetButton(langCode, "topup_button").InlineCallback(CallbackTopup))
+		}
 	}
+	inlineKeyboard = append(inlineKeyboard, chunkButtons(managementButtons, 2)...)
 
 	// Referrals only for active paid subscribers
-	if config.GetReferralDays() > 0 && existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now()) && !existingCustomer.IsTrial {
+	if config.GetReferralDays() > 0 && hasActiveSubscription && !existingCustomer.IsTrial {
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "referral_button").InlineCallback(CallbackReferral)})
 	}
 
+	var infoButtons []models.InlineKeyboardButton
 	if config.ServerStatusURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "server_status_button").InlineURL(config.ServerStatusURL())})
+		infoButtons = append(infoButtons, h.translation.GetButton(langCode, "server_status_button").InlineURL(config.ServerStatusURL()))
 	}
 	if config.SupportURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "support_button").InlineURL(config.SupportURL())})
+		infoButtons = append(infoButtons, h.translation.GetButton(langCode, "support_button").InlineURL(config.SupportURL()))
 	}
 	if config.FeedbackURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "feedback_button").InlineURL(config.FeedbackURL())})
+		infoButtons = append(infoButtons, h.translation.GetButton(langCode, "feedback_button").InlineURL(config.FeedbackURL()))
 	}
 	if config.ChannelURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "channel_button").InlineURL(config.ChannelURL())})
+		infoButtons = append(infoButtons, h.translation.GetButton(langCode, "channel_button").InlineURL(config.ChannelURL()))
 	}
 	if config.TosURL() != "" {
-		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "tos_button").InlineURL(config.TosURL())})
+		infoButtons = append(infoButtons, h.translation.GetButton(langCode, "tos_button").InlineURL(config.TosURL()))
 	}
+	inlineKeyboard = append(inlineKeyboard, chunkButtons(infoButtons, 2)...)
+
 	return inlineKeyboard
+}
+
+// chunkButtons packs a flat button list into rows of at most size buttons each.
+func chunkButtons(buttons []models.InlineKeyboardButton, size int) [][]models.InlineKeyboardButton {
+	var rows [][]models.InlineKeyboardButton
+	for i := 0; i < len(buttons); i += size {
+		end := i + size
+		if end > len(buttons) {
+			end = len(buttons)
+		}
+		rows = append(rows, buttons[i:end])
+	}
+	return rows
 }

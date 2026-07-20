@@ -44,7 +44,11 @@ func main() {
 	slog.Info("Application starting", "version", Version, "commit", Commit, "buildDate", BuildDate)
 
 	tm := translation.GetInstance()
-	err := tm.InitTranslations("./translations", config.DefaultLanguage())
+	var disabledLanguages []string
+	if !config.EnglishEnabled() {
+		disabledLanguages = append(disabledLanguages, "en")
+	}
+	err := tm.InitTranslations("./translations", config.DefaultLanguage(), disabledLanguages...)
 	if err != nil {
 		panic(err)
 	}
@@ -193,6 +197,7 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesResetConfirm, bot.MatchTypeExact, h.DevicesResetConfirmCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDeviceBuy, bot.MatchTypeExact, h.DeviceBuyCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackPayment, bot.MatchTypePrefix, h.PaymentCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackPaymentCancel, bot.MatchTypePrefix, h.PaymentCancelCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 
 	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
 		if update.Message == nil || update.Message.Text == "" {

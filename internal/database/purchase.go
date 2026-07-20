@@ -309,6 +309,38 @@ func (pr *PurchaseRepository) FindByCustomerIDAndInvoiceTypeLast(
 	return p, nil
 }
 
+// FindRecentPendingByCustomerID returns the most recent unattached pending RollyPay purchase for
+// a customer within the given window — mirrors TrafficTopupRepository.FindRecentPendingByTelegramID,
+// used to block a customer from spawning a second subscription invoice while one is still in
+// flight.
+func (pr *PurchaseRepository) FindRecentPendingByCustomerID(ctx context.Context, customerID int64, within time.Duration) (*Purchase, error) {
+	query := sq.Select("*").
+		From("purchase").
+		Where(sq.And{
+			sq.Eq{"customer_id": customerID},
+			sq.Eq{"status": PurchaseStatusPending},
+			sq.Eq{"invoice_type": InvoiceTypeRollyPay},
+			sq.Expr("provider_payment_id IS NULL"),
+			sq.Gt{"created_at": time.Now().Add(-within)},
+		}).
+		OrderBy("created_at DESC").
+		Limit(1).
+		PlaceholderFormat(sq.Dollar)
+
+	sqlStr, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build query: %w", err)
+	}
+	p := &Purchase{}
+	if err := scanPurchaseRow(pr.pool.QueryRow(ctx, sqlStr, args...), p); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find recent pending purchase: %w", err)
+	}
+	return p, nil
+}
+
 func scanPurchaseRow(row interface{ Scan(...interface{}) error }, p *Purchase) error {
 	return row.Scan(
 		&p.ID, &p.Amount, &p.CustomerID, &p.CreatedAt, &p.Month,

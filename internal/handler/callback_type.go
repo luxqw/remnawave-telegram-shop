@@ -6,6 +6,7 @@ const (
 	CallbackStart               = "start"
 	CallbackConnect             = "connect"
 	CallbackPayment             = "payment"
+	CallbackPaymentCancel       = "payment_cancel"
 	CallbackTrial               = "trial"
 	CallbackActivateTrial       = "activate_trial"
 	CallbackReferral            = "referral"

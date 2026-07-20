@@ -12,6 +12,7 @@ import (
 	"remnawave-tg-shop-bot/internal/rollypay"
 	"remnawave-tg-shop-bot/internal/translation"
 	"remnawave-tg-shop-bot/utils"
+	"strings"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -81,6 +82,18 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		}
 	}
 
+	// needsTrafficReset decides whether this purchase should zero the usage counter. Resetting on
+	// every purchase (the old behavior) double-dips with Remnawave's own periodic reset
+	// (TRAFFIC_LIMIT_RESET_STRATEGY): a customer renewing a few days early would get a bonus reset
+	// on top of the panel's own scheduled one. Reset only when it's actually needed: the
+	// subscription had lapsed (a genuine new-period start), or the account is currently LIMITED
+	// (blocked for exceeding its cap) despite having days left — otherwise the purchase would grant
+	// nothing and the customer stays stuck until the panel's own next scheduled reset.
+	needsTrafficReset := customer.ExpireAt == nil || !customer.ExpireAt.After(time.Now())
+	if !needsTrafficReset {
+		needsTrafficReset = s.isTrafficLimited(ctx, customer.TelegramID)
+	}
+
 	// calculateRollover reads the user's current usage from Remnawave before CreateOrUpdateUser
 	// resets the counter, which is the correct moment to snapshot "bytes consumed this period".
 	// On payment retry, the new rollover record created below will have a fresher completed_at
@@ -95,10 +108,13 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		return err
 	}
 
-	// Reset the traffic counter so the new period starts from 0.
-	// Rollover was snapshotted above before this call, so the ordering is correct.
-	if resetErr := s.remnawaveClient.ResetUserTraffic(ctx, user.UUID); resetErr != nil {
-		slog.Error("renewal: failed to reset user traffic", "uuid", user.UUID, "telegram_id", customer.TelegramID, "error", resetErr)
+	// Reset the traffic counter so the new period starts from 0. Rollover was snapshotted above
+	// before this call, so the ordering is correct. Skipped for an early renewal that isn't
+	// LIMITED — see needsTrafficReset above.
+	if needsTrafficReset {
+		if resetErr := s.remnawaveClient.ResetUserTraffic(ctx, user.UUID); resetErr != nil {
+			slog.Error("renewal: failed to reset user traffic", "uuid", user.UUID, "telegram_id", customer.TelegramID, "error", resetErr)
+		}
 	}
 
 	if rolloverBytes > 0 {
@@ -290,6 +306,9 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 	})
 	if err != nil {
 		slog.Error("Error creating rollypay payment", "error", err)
+		if cancelErr := s.purchaseRepository.UpdateFields(ctx, purchaseId, map[string]interface{}{"status": database.PurchaseStatusCancel}); cancelErr != nil {
+			slog.Error("Error cancelling orphaned purchase", "error", cancelErr, "purchase_id", purchaseId)
+		}
 		return "", 0, err
 	}
 
@@ -398,4 +417,15 @@ func (s PaymentService) calculateRollover(ctx context.Context, telegramID int64)
 		return 0
 	}
 	return rollover
+}
+
+// isTrafficLimited reports whether the customer's Remnawave account is currently blocked for
+// exceeding its traffic cap (status LIMITED) despite still having subscription days left — used
+// by ProcessPurchaseById to force a reset on early renewal even when the lapse check says no.
+func (s PaymentService) isTrafficLimited(ctx context.Context, telegramID int64) bool {
+	users, err := s.remnawaveClient.GetUsersByTelegramID(ctx, telegramID)
+	if err != nil || len(users) == 0 {
+		return false
+	}
+	return strings.ToUpper(users[0].Status) == "LIMITED"
 }
