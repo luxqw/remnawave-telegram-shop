@@ -75,44 +75,10 @@ func (h Handler) SellCallbackHandler(ctx context.Context, b *bot.Bot, update *mo
 
 	var keyboard [][]models.InlineKeyboardButton
 
-	if config.IsCryptoPayEnabled() {
+	if config.IsRollyPayEnabled() {
 		keyboard = append(keyboard, []models.InlineKeyboardButton{
-			h.translation.GetButton(langCode, "crypto_button").InlineCallback(fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeCrypto, amount)),
+			h.translation.GetButton(langCode, "rollypay_button").InlineCallback(fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeRollyPay, amount)),
 		})
-	}
-
-	if config.IsYookasaEnabled() {
-		keyboard = append(keyboard, []models.InlineKeyboardButton{
-			h.translation.GetButton(langCode, "card_button").InlineCallback(fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeYookasa, amount)),
-		})
-	}
-
-	if config.IsTelegramStarsEnabled() {
-		shouldShowStarsButton := true
-
-		if config.RequirePaidPurchaseForStars() {
-			customer, err := h.customerRepository.FindByTelegramId(ctx, callback.Chat.ID)
-			if err != nil {
-				slog.Error("Error finding customer for stars check", "error", err)
-				shouldShowStarsButton = false
-			} else if customer != nil {
-				paidPurchase, err := h.purchaseRepository.FindSuccessfulPaidPurchaseByCustomer(ctx, customer.ID)
-				if err != nil {
-					slog.Error("Error checking paid purchase", "error", err)
-					shouldShowStarsButton = false
-				} else if paidPurchase == nil {
-					shouldShowStarsButton = false
-				}
-			} else {
-				shouldShowStarsButton = false
-			}
-		}
-
-		if shouldShowStarsButton {
-			keyboard = append(keyboard, []models.InlineKeyboardButton{
-				h.translation.GetButton(langCode, "stars_button").InlineCallback(fmt.Sprintf("%s?month=%s&invoiceType=%s&amount=%s", CallbackPayment, month, database.InvoiceTypeTelegram, amount)),
-			})
-		}
 	}
 
 	if config.GetTributeWebHookUrl() != "" {
@@ -148,13 +114,7 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	}
 
 	invoiceType := database.InvoiceType(callbackQuery["invoiceType"])
-
-	var price int
-	if invoiceType == database.InvoiceTypeTelegram {
-		price = config.StarsPrice(month)
-	} else {
-		price = config.Price(month)
-	}
+	price := config.Price(month)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
@@ -194,32 +154,6 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 	h.cache.Set(purchaseId, message.ID)
-}
-
-func (h Handler) PreCheckoutCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	_, err := b.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{
-		PreCheckoutQueryID: update.PreCheckoutQuery.ID,
-		OK:                 true,
-	})
-	if err != nil {
-		slog.Error("Error sending answer pre checkout query", "error", err)
-	}
-}
-
-func (h Handler) SuccessPaymentHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	payload := strings.Split(update.Message.SuccessfulPayment.InvoicePayload, "&")
-	purchaseId, err := strconv.Atoi(payload[0])
-	username := payload[1]
-	if err != nil {
-		slog.Error("Error parsing purchase id", "error", err)
-		return
-	}
-
-	ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, username)
-	err = h.paymentService.ProcessPurchaseById(ctxWithUsername, int64(purchaseId))
-	if err != nil {
-		slog.Error("Error processing purchase", "error", err)
-	}
 }
 
 func parseCallbackData(data string) map[string]string {

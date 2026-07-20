@@ -25,10 +25,21 @@ func (h Handler) DevicesCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 
-	h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, customer.TelegramID)
+	h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, customer.TelegramID, customer.IsTrial)
 }
 
-func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string, telegramID int64) {
+// deviceBuyRow returns the "buy +1 device slot" button row, or nil when the purchase isn't
+// offered (RollyPay disabled, or the customer is on a trial — mirrors TopupCallbackHandler's
+// same non-trial gate).
+func (h Handler) deviceBuyRow(langCode string, isTrial bool) []models.InlineKeyboardButton {
+	if !config.IsRollyPayEnabled() || isTrial {
+		return nil
+	}
+	label := fmt.Sprintf(h.translation.GetText(langCode, "device_buy_button"), config.DeviceSlotPriceRUB())
+	return []models.InlineKeyboardButton{{Text: label, CallbackData: CallbackDeviceBuy}}
+}
+
+func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string, telegramID int64, isTrial bool) {
 	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, telegramID)
 	if err != nil || len(rwUsers) == 0 {
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
@@ -56,6 +67,9 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 				h.translation.GetButton(langCode, "connect_button").InlineWebApp(config.GetMiniAppURL()),
 			})
 		}
+		if row := h.deviceBuyRow(langCode, isTrial); row != nil {
+			rows = append(rows, row)
+		}
 		rows = append(rows, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID: chatID, MessageID: messageID, ParseMode: models.ParseModeHTML,
@@ -77,6 +91,9 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 		label := fmt.Sprintf(h.translation.GetText(langCode, "devices_delete_button_label"), i+1, buildDeviceShortName(langCode, h.translation, i, d))
 		delCallback := fmt.Sprintf("%s?i=%d", CallbackDevicesDeleteDevice, i)
 		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: delCallback}})
+	}
+	if row := h.deviceBuyRow(langCode, isTrial); row != nil {
+		rows = append(rows, row)
 	}
 	rows = append(rows, []models.InlineKeyboardButton{
 		h.translation.GetButton(langCode, "devices_reset_button").InlineCallback(CallbackDevicesReset),
@@ -134,7 +151,7 @@ func (h Handler) DevicesDeleteDeviceCallbackHandler(ctx context.Context, b *bot.
 
 	customer, _ := h.customerRepository.FindByTelegramId(ctx, telegramID)
 	if customer != nil && customer.ExpireAt != nil {
-		h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, telegramID)
+		h.showDevicesList(ctx, b, msg.Chat.ID, msg.ID, langCode, telegramID, customer.IsTrial)
 	}
 	slog.Info("devices: deleted device", "telegram_id", telegramID, "index", idx)
 }

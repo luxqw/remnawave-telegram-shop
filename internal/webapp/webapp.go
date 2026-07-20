@@ -16,6 +16,7 @@ import (
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/notification"
 	"remnawave-tg-shop-bot/internal/remnawave"
+	"remnawave-tg-shop-bot/internal/rollypay"
 	"remnawave-tg-shop-bot/internal/tribute"
 )
 
@@ -38,7 +39,8 @@ type Handler struct {
 	activityRepository        *database.ActivityRepository
 	notificationLogRepository *database.NotificationLogRepository
 	remnawaveClient           *remnawave.Client
-	tributeClient             *tribute.Client // nil when Tribute webhooks are disabled
+	tributeClient             *tribute.Client         // nil when Tribute webhooks are disabled
+	rollypayClient            *rollypay.WebhookClient // nil when RollyPay webhooks are disabled
 	ops                       *adminops.Service
 	subscriptionService       *notification.SubscriptionService
 	trafficWarningService     *notification.TrafficWarningService
@@ -67,6 +69,7 @@ func NewHandler(
 	notificationLogRepository *database.NotificationLogRepository,
 	remnawaveClient *remnawave.Client,
 	tributeClient *tribute.Client,
+	rollypayClient *rollypay.WebhookClient,
 	ops *adminops.Service,
 	subscriptionService *notification.SubscriptionService,
 	trafficWarningService *notification.TrafficWarningService,
@@ -83,6 +86,7 @@ func NewHandler(
 		notificationLogRepository: notificationLogRepository,
 		remnawaveClient:           remnawaveClient,
 		tributeClient:             tributeClient,
+		rollypayClient:            rollypayClient,
 		ops:                       ops,
 		subscriptionService:       subscriptionService,
 		trafficWarningService:     trafficWarningService,

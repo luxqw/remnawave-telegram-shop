@@ -28,6 +28,7 @@ type TrafficTopup struct {
 	PriceAmount             float64
 	Currency                string
 	TributePaymentID        *string
+	RollyPayPaymentID       *string
 	TargetTrafficLimitBytes *int64
 	Status                  TopupStatus
 	CreatedAt               time.Time
@@ -43,7 +44,7 @@ func NewTrafficTopupRepository(pool *pgxpool.Pool) *TrafficTopupRepository {
 }
 
 const topupSelectCols = `id, telegram_id, remnawave_uuid, gb_amount, price_amount, currency,
-	tribute_payment_id, target_traffic_limit_bytes, status, created_at, completed_at`
+	tribute_payment_id, rollypay_payment_id, target_traffic_limit_bytes, status, created_at, completed_at`
 
 func scanTopup(row interface {
 	Scan(...any) error
@@ -51,7 +52,7 @@ func scanTopup(row interface {
 	var t TrafficTopup
 	err := row.Scan(
 		&t.ID, &t.TelegramID, &t.RemnawaveUUID, &t.GBAmount, &t.PriceAmount,
-		&t.Currency, &t.TributePaymentID, &t.TargetTrafficLimitBytes, &t.Status,
+		&t.Currency, &t.TributePaymentID, &t.RollyPayPaymentID, &t.TargetTrafficLimitBytes, &t.Status,
 		&t.CreatedAt, &t.CompletedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -65,13 +66,13 @@ func scanTopup(row interface {
 
 func (r *TrafficTopupRepository) Create(ctx context.Context, t *TrafficTopup) (int64, error) {
 	query := `INSERT INTO traffic_topups
-		(telegram_id, remnawave_uuid, gb_amount, price_amount, currency, tribute_payment_id, target_traffic_limit_bytes, status, completed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		(telegram_id, remnawave_uuid, gb_amount, price_amount, currency, tribute_payment_id, rollypay_payment_id, target_traffic_limit_bytes, status, completed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id`
 	var id int64
 	err := r.pool.QueryRow(ctx, query,
 		t.TelegramID, t.RemnawaveUUID, t.GBAmount, t.PriceAmount, t.Currency,
-		t.TributePaymentID, t.TargetTrafficLimitBytes, t.Status, t.CompletedAt,
+		t.TributePaymentID, t.RollyPayPaymentID, t.TargetTrafficLimitBytes, t.Status, t.CompletedAt,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("create topup: %w", err)
@@ -79,11 +80,32 @@ func (r *TrafficTopupRepository) Create(ctx context.Context, t *TrafficTopup) (i
 	return id, nil
 }
 
+// FindByID fetches a single topup row by its own id — used by the RollyPay webhook handler,
+// which encodes the row id directly in the payment's order_id ("topup-<id>") rather than needing
+// to look the row up by a provider-generated payment id.
+func (r *TrafficTopupRepository) FindByID(ctx context.Context, id int64) (*TrafficTopup, error) {
+	query := `SELECT ` + topupSelectCols + ` FROM traffic_topups WHERE id = $1`
+	t, err := scanTopup(r.pool.QueryRow(ctx, query, id))
+	if err != nil {
+		return nil, fmt.Errorf("find topup by id: %w", err)
+	}
+	return t, nil
+}
+
 func (r *TrafficTopupRepository) FindByTributePaymentID(ctx context.Context, paymentID string) (*TrafficTopup, error) {
 	query := `SELECT ` + topupSelectCols + ` FROM traffic_topups WHERE tribute_payment_id = $1`
 	t, err := scanTopup(r.pool.QueryRow(ctx, query, paymentID))
 	if err != nil {
 		return nil, fmt.Errorf("find topup by payment id: %w", err)
+	}
+	return t, nil
+}
+
+func (r *TrafficTopupRepository) FindByRollyPayPaymentID(ctx context.Context, paymentID string) (*TrafficTopup, error) {
+	query := `SELECT ` + topupSelectCols + ` FROM traffic_topups WHERE rollypay_payment_id = $1`
+	t, err := scanTopup(r.pool.QueryRow(ctx, query, paymentID))
+	if err != nil {
+		return nil, fmt.Errorf("find topup by rollypay payment id: %w", err)
 	}
 	return t, nil
 }
@@ -121,6 +143,20 @@ func (r *TrafficTopupRepository) MarkProcessing(ctx context.Context, id int64, p
 	_, err := r.pool.Exec(ctx, query, paymentID, remnaUUID, targetBytes, id)
 	if err != nil {
 		return fmt.Errorf("mark topup processing: %w", err)
+	}
+	return nil
+}
+
+// MarkProcessingRollyPay is MarkProcessing's RollyPay counterpart, setting rollypay_payment_id
+// instead of tribute_payment_id — kept as its own method (not a shared param) since the two
+// providers use different columns and Tribute's method stays untouched by design.
+func (r *TrafficTopupRepository) MarkProcessingRollyPay(ctx context.Context, id int64, paymentID string, remnaUUID string, targetBytes int64) error {
+	query := `UPDATE traffic_topups
+		SET status = 'processing', rollypay_payment_id = $1, remnawave_uuid = $2, target_traffic_limit_bytes = $3
+		WHERE id = $4`
+	_, err := r.pool.Exec(ctx, query, paymentID, remnaUUID, targetBytes, id)
+	if err != nil {
+		return fmt.Errorf("mark topup processing (rollypay): %w", err)
 	}
 	return nil
 }

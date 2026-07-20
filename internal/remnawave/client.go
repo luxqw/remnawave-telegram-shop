@@ -239,6 +239,23 @@ func (r *Client) UpdateUserTrafficLimit(ctx context.Context, userUUID uuid.UUID,
 }
 
 // ---------------------------------------------------------------------------
+// UpdateUserDeviceLimit — PATCH hwidDeviceLimit only, keeps all other fields (including expiry
+// and traffic limit) untouched. Because the renewal path (updateUser, below) never sets
+// HwidDeviceLimit in its own request, a purchased device slot survives subscription renewals
+// automatically — there is nothing to roll over, unlike traffic top-ups.
+// ---------------------------------------------------------------------------
+
+func (r *Client) UpdateUserDeviceLimit(ctx context.Context, userUUID uuid.UUID, newLimit int) error {
+	req := &UpdateUserRequest{
+		UUID:            &userUUID,
+		Status:          "ACTIVE",
+		HwidDeviceLimit: &newLimit,
+	}
+	var resp apiResponse[User]
+	return r.doJSON(ctx, http.MethodPatch, "/api/users", req, &resp)
+}
+
+// ---------------------------------------------------------------------------
 // UpdateUserStrategy — minimal PATCH to update only trafficLimitStrategy
 // ---------------------------------------------------------------------------
 

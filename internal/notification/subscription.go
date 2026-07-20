@@ -68,6 +68,20 @@ func (s *SubscriptionService) logNotification(ctx context.Context, customer data
 	}
 }
 
+// alreadySentToday mirrors logNotification's nil-guard: notificationLogRepository is nil in unit
+// tests that don't exercise logging, and dedup must fail open (never sent) rather than panic.
+func (s *SubscriptionService) alreadySentToday(ctx context.Context, telegramID int64, notificationType string, since time.Time) bool {
+	if s.notificationLogRepository == nil {
+		return false
+	}
+	sent, err := s.notificationLogRepository.HasSentSince(ctx, telegramID, notificationType, since)
+	if err != nil {
+		slog.Error("notification: check already-sent-today failed, sending anyway", "notification_type", notificationType, "customer_id", telegramID, "error", err)
+		return false
+	}
+	return sent
+}
+
 func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 	ctx := context.Background()
 	customers, err := s.getCustomersWithExpiringSubscriptions()
@@ -96,6 +110,11 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 	}
 	tributesProcessed := make(map[int64]bool, len(*latestActiveTributes))
 
+	// dayStart bounds the dedup check below to "already sent today" — this cron runs every 4
+	// hours, and without this guard a customer sitting in the [-1,+3]-day expiration window would
+	// get a fresh reminder on every tick (up to ~6/day) instead of once per calendar day.
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
 	for _, customer := range *customers {
 		daysUntilExpiration := s.getDaysUntilExpiration(now, *customer.ExpireAt)
 
@@ -121,9 +140,13 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 		}
 
 		if customer.IsTrial {
-			if daysUntilExpiration <= 1 {
+			if daysUntilExpiration <= 1 && !s.alreadySentToday(ctx, customer.TelegramID, "trial_expiring", dayStart) {
 				_ = s.sendTrialExpiringNotification(ctx, customer)
 			}
+			continue
+		}
+
+		if s.alreadySentToday(ctx, customer.TelegramID, "subscription_expiring", dayStart) {
 			continue
 		}
 

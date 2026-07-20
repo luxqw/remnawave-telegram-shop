@@ -69,6 +69,21 @@ func (r *NotificationLogRepository) FindRecentByCustomer(ctx context.Context, cu
 	return list, nil
 }
 
+// HasSentSince reports whether a "sent" notification of the given type was already logged for
+// this customer at/after the given time — used to dedup the subscription-expiring reminder cron,
+// which previously fired on every 4-hourly tick a customer sat inside its expiration window.
+func (r *NotificationLogRepository) HasSentSince(ctx context.Context, customerTelegramID int64, notificationType string, since time.Time) (bool, error) {
+	query := `SELECT EXISTS(
+		SELECT 1 FROM notification_log
+		WHERE customer_telegram_id = $1 AND notification_type = $2 AND status = 'sent' AND created_at >= $3
+	)`
+	var exists bool
+	if err := r.pool.QueryRow(ctx, query, customerTelegramID, notificationType, since).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check notification log sent since: %w", err)
+	}
+	return exists, nil
+}
+
 // NotificationLogFilter narrows FindAllPaginated. Zero-value fields are ignored (nil pointers /
 // empty strings mean "no filter on this column").
 type NotificationLogFilter struct {
