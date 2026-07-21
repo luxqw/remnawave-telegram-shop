@@ -29,31 +29,36 @@
   </header>
 
   <main class="proxy-main">
-    <div class="sheet proxy-card">
-      <h1 class="proxy-title">Прокси для доступа к Telegram</h1>
-      <p class="proxy-intro">
-        Если у знакомого не открывается Telegram — перешлите ему эту страницу через SMS, VK или Max. Ссылка ниже подключает прокси за один тап.
-      </p>
+    <div class="proxy-stack">
+      <div class="sheet proxy-card">
+        <h1 class="proxy-title">Прокси для доступа к Telegram</h1>
+        <p class="proxy-intro">
+          Если у знакомого не открывается Telegram — перешлите ему эту страницу через SMS, VK или Max. Ссылка ниже подключает прокси за один тап.
+        </p>
 
-      <div class="proxy-steps">
-        <div class="step-row">
-          <span class="n">1</span>
-          <p>Скопируйте ссылку ниже</p>
-        </div>
-        <div class="step-row">
-          <span class="n">2</span>
-          <p>Отправьте её любым способом, кроме Telegram — SMS, VK, Max</p>
-        </div>
-        <div class="step-row">
-          <span class="n">3</span>
-          <p>Откройте ссылку на устройстве с Telegram — прокси подключится автоматически</p>
+        <div class="proxy-steps">
+          <div class="step-row">
+            <span class="n">1</span>
+            <p>Скопируйте ссылку ниже</p>
+          </div>
+          <div class="step-row">
+            <span class="n">2</span>
+            <p>Отправьте её любым способом, кроме Telegram — SMS, VK, Max</p>
+          </div>
+          <div class="step-row">
+            <span class="n">3</span>
+            <p>Откройте ссылку на устройстве с Telegram — прокси подключится автоматически</p>
+          </div>
         </div>
       </div>
 
-      <div id="proxyList"></div>
+      <div class="sheet proxy-list-card">
+        <div class="proxy-list-eyebrow">Доступные сервера</div>
+        <div id="proxyList"></div>
 
-      <div id="proxyPending" class="proxy-pending">
-        <p>Ссылки появятся здесь в ближайшее время. Актуальную ссылку также можно узнать в поддержке.</p>
+        <div id="proxyPending" class="proxy-pending">
+          <p>Ссылки появятся здесь в ближайшее время. Актуальную ссылку также можно узнать в поддержке.</p>
+        </div>
       </div>
     </div>
   </main>

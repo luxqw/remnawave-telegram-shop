@@ -37,9 +37,19 @@
     document.getElementById("proxyPending").style.display = "none";
     const list = document.getElementById("proxyList");
 
-    activeProxies.forEach((proxy) => {
+    const connectIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>';
+    const copyIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+
+    activeProxies.forEach((proxy, i) => {
       const row = document.createElement("div");
       row.className = "proxy-row";
+
+      const badge = document.createElement("span");
+      badge.className = "n";
+      badge.textContent = String(i + 1).padStart(2, "0");
+
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "proxy-row-body";
 
       const head = document.createElement("div");
       head.className = "proxy-row-head";
@@ -56,18 +66,19 @@
       connectLink.href = proxy.link;
       connectLink.target = "_blank";
       connectLink.rel = "noopener";
-      connectLink.textContent = "Подключить";
+      connectLink.innerHTML = connectIcon + "<span>Подключить</span>";
 
       const copyBtn = document.createElement("button");
       copyBtn.className = "pill-link";
       copyBtn.type = "button";
-      copyBtn.textContent = "Скопировать";
+      copyBtn.innerHTML = copyIcon + "<span>Скопировать</span>";
       copyBtn.addEventListener("click", async () => {
         try {
           await navigator.clipboard.writeText(proxy.link);
-          const original = copyBtn.textContent;
-          copyBtn.textContent = "Скопировано";
-          setTimeout(() => { copyBtn.textContent = original; }, 1500);
+          const label = copyBtn.querySelector("span");
+          const original = label.textContent;
+          label.textContent = "Скопировано";
+          setTimeout(() => { label.textContent = original; }, 1500);
         } catch {
           // Clipboard API unavailable (older browser/no permission) — the link text below is
           // already selectable by hand as a fallback.
@@ -81,7 +92,8 @@
       linkText.className = "proxy-row-link";
       linkText.textContent = proxy.link;
 
-      row.append(head, linkText);
+      bodyEl.append(head, linkText);
+      row.append(badge, bodyEl);
       list.appendChild(row);
     });
   }
