@@ -99,22 +99,25 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
+	langCode := update.CallbackQuery.From.LanguageCode
+
 	customer, err := h.customerRepository.FindByTelegramId(ctx, callback.Chat.ID)
 	if err != nil {
 		slog.Error("Error finding customer", "error", err)
+		h.showPaymentError(ctx, b, callback.Chat.ID, callback.ID, langCode)
 		return
 	}
 	if customer == nil {
 		slog.Error("customer not exist", "chatID", callback.Chat.ID, "error", err)
+		h.showPaymentError(ctx, b, callback.Chat.ID, callback.ID, langCode)
 		return
 	}
-
-	langCode := update.CallbackQuery.From.LanguageCode
 
 	if invoiceType == database.InvoiceTypeRollyPay {
 		pending, err := h.purchaseRepository.FindRecentPendingByCustomerID(ctx, customer.ID, 30*time.Minute)
 		if err != nil {
 			slog.Error("Error checking recent pending purchase", "error", err)
+			h.showPaymentError(ctx, b, callback.Chat.ID, callback.ID, langCode)
 			return
 		}
 		if pending != nil {
@@ -136,6 +139,7 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	paymentURL, purchaseId, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
 	if err != nil {
 		slog.Error("Error creating payment", "error", err)
+		h.showPaymentError(ctx, b, callback.Chat.ID, callback.ID, langCode)
 		return
 	}
 
@@ -161,6 +165,18 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 	h.cache.Set(purchaseId, message.ID)
+}
+
+// showPaymentError gives visible feedback on a failed purchase attempt instead of leaving the
+// previous screen frozen with stale buttons — matches showTopupError/showDeviceBuyError.
+func (h Handler) showPaymentError(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string) {
+	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID: chatID, MessageID: messageID, ParseMode: models.ParseModeHTML,
+		Text: h.translation.GetText(langCode, "topup_error"),
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+		}},
+	})
 }
 
 // PaymentCancelCallbackHandler cancels a stuck pending subscription purchase, mirroring

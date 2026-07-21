@@ -154,9 +154,13 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		return err
 	}
 
+	activationTextKey := "subscription_activated"
+	if !customer.IsTrial && customer.SubscriptionLink != nil {
+		activationTextKey = "subscription_renewed"
+	}
 	_, err = s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: customer.TelegramID,
-		Text:   s.translation.GetText(customer.Language, "subscription_activated"),
+		Text:   s.translation.GetText(customer.Language, activationTextKey),
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: s.createConnectKeyboard(customer),
 		},

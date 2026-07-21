@@ -165,7 +165,11 @@ func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCod
 		inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "trial_button").InlineCallback(CallbackTrial)})
 	}
 
-	inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "buy_button").InlineCallback(CallbackBuy)})
+	buyButtonKey := "buy_button"
+	if !existingCustomer.IsTrial && existingCustomer.SubscriptionLink != nil {
+		buyButtonKey = "renew_subscription_button"
+	}
+	inlineKeyboard = append(inlineKeyboard, []models.InlineKeyboardButton{h.translation.GetButton(langCode, buyButtonKey).InlineCallback(CallbackBuy)})
 
 	hasActiveSubscription := existingCustomer.SubscriptionLink != nil && existingCustomer.ExpireAt != nil && existingCustomer.ExpireAt.After(time.Now())
 

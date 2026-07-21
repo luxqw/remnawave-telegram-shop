@@ -85,15 +85,16 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 	}
 	sb.WriteString(h.translation.GetText(langCode, "devices_list_footer"))
 
-	// One delete button per device
+	// Buy row goes first, right under the header — otherwise it gets buried below one delete
+	// button per connected device and is easy to miss once a customer has more than 1-2 devices.
 	var rows [][]models.InlineKeyboardButton
+	if row := h.deviceBuyRow(langCode, isTrial); row != nil {
+		rows = append(rows, row)
+	}
 	for i, d := range devices {
 		label := fmt.Sprintf(h.translation.GetText(langCode, "devices_delete_button_label"), i+1, buildDeviceShortName(langCode, h.translation, i, d))
 		delCallback := fmt.Sprintf("%s?i=%d", CallbackDevicesDeleteDevice, i)
 		rows = append(rows, []models.InlineKeyboardButton{{Text: label, CallbackData: delCallback}})
-	}
-	if row := h.deviceBuyRow(langCode, isTrial); row != nil {
-		rows = append(rows, row)
 	}
 	rows = append(rows, []models.InlineKeyboardButton{
 		h.translation.GetButton(langCode, "devices_reset_button").InlineCallback(CallbackDevicesReset),

@@ -1,5 +1,5 @@
 {
-  "greeting": "👋🏻 <b>Hi</b>\nThis is a bot for connecting to <b>Vexel VPN</b>🛡️\n\n<b>Available servers:</b>\n ├ 🇳🇱Netherlands\n ├ 🇱🇻Latvia\n ├ 🇫🇮Finland\n ├ 🇹🇷Turkey\n ├ 🇷🇺Russia | YouTube without ads\n └ 🔓Whitelist bypass | LTE-only networks\n\n<b>Benefits:</b>\n• High speed\n• Unlimited traffic on main servers\n• 50 GB/mo for whitelist bypass\n• Up to 5 devices per subscription\n\n<b>How to connect:</b>\n• Tap the \"Try for free\" button\n• Follow the short instructions",
+  "greeting": "👋🏻 <b>Hi</b>\nThis is a bot for connecting to <b>Vexel VPN</b>🛡️\n\n<b>Available servers:</b>\n ├ 🇳🇱Netherlands\n ├ 🇱🇻Latvia\n ├ 🇫🇮Finland\n ├ 🇹🇷Turkey\n ├ 🇷🇺Russia | YouTube without ads\n └ 🔓Whitelist bypass | LTE-only networks\n\n<b>Benefits:</b>\n• High speed\n• Unlimited traffic on main servers\n• 50 GB/mo for whitelist bypass\n• Up to 5 devices per subscription",
   "buy_button": "💰 Buy",
   "connect_button": "🔌 Connect",
   "back_button": "🔙 Back",
@@ -15,6 +15,7 @@
   "subscription_link": "\n\n🔗 Link: %s",
   "no_subscription": "You don't have an active subscription",
   "subscription_activated": "✅ Subscription activated!",
+  "subscription_renewed": "✅ Subscription renewed!",
   "feedback_button": "⭐ Reviews",
   "server_status_button": "🟢 Server status",
   "support_button": "🆘 Support",
