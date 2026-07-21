@@ -1,0 +1,119 @@
+/* Vexel VPN — proxy-connect page. Extends style.css's tokens; page-specific layout only, no
+   inline style="" attributes anywhere in proxy.html — this page ships under a strict
+   `style-src 'self'` CSP (no 'unsafe-inline'), so every rule has to live here. */
+
+.proxy-main {
+  min-height: calc(100dvh - 300px);
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.proxy-card {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 44px clamp(24px, 5vw, 52px) 40px;
+  width: 100%;
+}
+
+.proxy-title {
+  font-family: var(--display);
+  font-size: clamp(22px, 5vw, 30px);
+  margin: 0 0 12px;
+  letter-spacing: -0.01em;
+}
+
+.proxy-intro {
+  color: var(--ink-dim);
+  line-height: 1.6;
+  margin: 0 0 24px;
+  font-size: 15px;
+  max-width: 46ch;
+}
+
+.proxy-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.step-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.step-row .n {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--glass-fill-hover);
+  border: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.step-row p {
+  margin: 0;
+  padding-top: 1px;
+  color: var(--ink-dim);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.proxy-pending p {
+  color: var(--ink-faint);
+  font-size: 14px;
+  margin: 0;
+}
+
+.proxy-row {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.proxy-row:last-child { border-bottom: 0; }
+
+.proxy-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.proxy-row-label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.proxy-row-link {
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-family: var(--mono);
+  word-break: break-all;
+  margin-top: 4px;
+}
+
+.proxy-row-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.proxy-contact {
+  margin-top: 16px;
+}
+
+@media (max-width: 480px) {
+  .proxy-row-actions { width: 100%; }
+  .proxy-row-actions .pill-link { flex: 1; justify-content: center; }
+  .step-row p { font-size: 13.5px; }
+}
