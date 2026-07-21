@@ -27,23 +27,36 @@
     </button>
   </header>
 
-  <main style="margin-top: 32px;">
-    <div class="sheet" style="max-width: 640px; margin: 0 auto; padding: 32px clamp(20px, 4vw, 44px) 36px;">
-      <h1 style="font-family: var(--display); font-size: clamp(22px, 4vw, 30px); margin: 0 0 12px;">Не открывается Telegram?</h1>
-      <p style="color: var(--ink-dim); line-height: 1.6; margin: 0 0 20px;">
-        Если у вас нет доступа к Telegram и проблемы на других устройствах — перешлите эту ссылку на прокси через SMS, VK или Max. Достаточно открыть её на устройстве с Telegram — приложение само предложит подключить прокси.
-      </p>
-
-      <div id="proxyReady" style="display:none;">
-        <div class="contact-links" style="margin-bottom: 12px;">
-          <a class="pill-link primary" id="proxyLink" href="#" target="_blank" rel="noopener">Подключить прокси</a>
-          <button class="pill-link" id="copyBtn" type="button">Скопировать ссылку</button>
-        </div>
-        <p style="color: var(--ink-faint); font-size: 13px; margin: 0;" id="proxyLinkText"></p>
+  <main style="min-height: calc(100dvh - 300px); display: flex; align-items: center; margin-top: 8px;">
+    <div class="sheet" style="max-width: 620px; margin: 0 auto; padding: 44px clamp(24px, 5vw, 52px) 40px; width: 100%;">
+      <div style="width: 56px; height: 56px; border-radius: 16px; background: var(--glass-fill-hover); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5.5v6c0 5 3.4 8.7 8 9.5 4.6-.8 8-4.5 8-9.5v-6L12 2Z"/><path d="m9 12 2 2 4-4"/></svg>
       </div>
 
+      <h1 style="font-family: var(--display); font-size: clamp(24px, 4vw, 32px); margin: 0 0 14px; letter-spacing: -0.01em;">Не открывается Telegram?</h1>
+      <p style="color: var(--ink-dim); line-height: 1.6; margin: 0 0 28px; font-size: 15px; max-width: 46ch;">
+        Если Telegram не открывается — перешлите эту страницу на другое устройство через SMS, VK или Max. Прокси-ссылка ниже восстанавливает доступ за один тап.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; padding: 20px 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair);">
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <span style="flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--glass-fill-hover); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 12px; color: var(--ink-dim);">1</span>
+          <p style="margin: 0; padding-top: 2px; color: var(--ink-dim); font-size: 14px; line-height: 1.5;">Скопируйте ссылку на этой странице</p>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <span style="flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--glass-fill-hover); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 12px; color: var(--ink-dim);">2</span>
+          <p style="margin: 0; padding-top: 2px; color: var(--ink-dim); font-size: 14px; line-height: 1.5;">Отправьте её себе через SMS, VK или Max — любой способ, кроме Telegram</p>
+        </div>
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <span style="flex: none; width: 26px; height: 26px; border-radius: 999px; background: var(--glass-fill-hover); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 12px; color: var(--ink-dim);">3</span>
+          <p style="margin: 0; padding-top: 2px; color: var(--ink-dim); font-size: 14px; line-height: 1.5;">Откройте ссылку на устройстве, где стоит Telegram — прокси подключится автоматически</p>
+        </div>
+      </div>
+
+      <div id="proxyList" style="display: flex; flex-direction: column; gap: 12px;"></div>
+
       <div id="proxyPending">
-        <p style="color: var(--ink-faint); font-size: 14px;">Ссылка появится здесь в ближайшее время. Актуальную ссылку также можно узнать в поддержке.</p>
+        <p style="color: var(--ink-faint); font-size: 14px; margin: 0;">Ссылки появятся здесь в ближайшее время. Актуальную ссылку также можно узнать в поддержке.</p>
       </div>
     </div>
   </main>
@@ -58,7 +71,7 @@
     </div>
   </div>
 
-  <footer class="site-foot">© Vexel VPN — policy.vexel-squad.space</footer>
+  <footer class="site-foot">© Vexel VPN — proxy.vexel-squad.space</footer>
 
 </div>
 
@@ -66,9 +79,14 @@
 (() => {
   "use strict";
 
-  // Fill this in once a real MTProto proxy link exists (t.me/proxy?server=...&port=...&secret=...).
-  // Left empty renders the "coming soon" state below instead of a dead link.
-  const PROXY_LINK = "";
+  // Fill in real MTProto proxy links (t.me/proxy?server=...&port=...&secret=...) as they become
+  // available. Any entry with an empty link is skipped; if every entry is empty, the "coming
+  // soon" state below renders instead. Add or remove entries freely - the list isn't fixed at 3.
+  const PROXIES = [
+    { label: "Прокси 1", link: "" },
+    { label: "Прокси 2", link: "" },
+    { label: "Прокси 3", link: "" },
+  ];
 
   const root = document.documentElement;
   const THEME_KEY = "vexel-policy-theme";
@@ -92,23 +110,41 @@
     localStorage.setItem(THEME_KEY, next);
   });
 
-  if (PROXY_LINK) {
+  const activeProxies = PROXIES.filter((p) => p.link);
+  if (activeProxies.length > 0) {
     document.getElementById("proxyPending").style.display = "none";
-    document.getElementById("proxyReady").style.display = "block";
-    const linkEl = document.getElementById("proxyLink");
-    linkEl.href = PROXY_LINK;
-    document.getElementById("proxyLinkText").textContent = PROXY_LINK;
-    document.getElementById("copyBtn").addEventListener("click", async () => {
-      const btn = document.getElementById("copyBtn");
-      try {
-        await navigator.clipboard.writeText(PROXY_LINK);
-        const original = btn.textContent;
-        btn.textContent = "Скопировано";
-        setTimeout(() => { btn.textContent = original; }, 1500);
-      } catch {
-        // Clipboard API unavailable (older browser/no permission) — the link text next to the
-        // button is already selectable by hand as a fallback.
-      }
+    const list = document.getElementById("proxyList");
+    activeProxies.forEach((proxy, i) => {
+      const row = document.createElement("div");
+      row.className = "sheet";
+      row.style.cssText = "padding: 16px 20px; --mx: 50%; --my: 0%;";
+      row.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+          <div>
+            <div style="font-weight: 600; font-size: 14px; margin-bottom: 2px;">${proxy.label}</div>
+            <div style="color: var(--ink-faint); font-size: 12px; font-family: var(--mono); word-break: break-all;">${proxy.link}</div>
+          </div>
+          <div class="contact-links" style="flex: none;">
+            <a class="pill-link primary" href="${proxy.link}" target="_blank" rel="noopener">Подключить</a>
+            <button class="pill-link copy-btn" type="button" data-link="${proxy.link}">Скопировать</button>
+          </div>
+        </div>
+      `;
+      list.appendChild(row);
+    });
+
+    list.querySelectorAll(".copy-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.link);
+          const original = btn.textContent;
+          btn.textContent = "Скопировано";
+          setTimeout(() => { btn.textContent = original; }, 1500);
+        } catch {
+          // Clipboard API unavailable (older browser/no permission) — the link text next to the
+          // button is already selectable by hand as a fallback.
+        }
+      });
     });
   }
 
