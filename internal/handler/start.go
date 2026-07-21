@@ -207,6 +207,9 @@ func (h Handler) buildStartKeyboard(existingCustomer *database.Customer, langCod
 	if config.TosURL() != "" {
 		infoButtons = append(infoButtons, h.translation.GetButton(langCode, "tos_button").InlineURL(config.TosURL()))
 	}
+	if config.ProxyURL() != "" {
+		infoButtons = append(infoButtons, h.translation.GetButton(langCode, "proxy_button").InlineURL(config.ProxyURL()))
+	}
 	inlineKeyboard = append(inlineKeyboard, chunkButtons(infoButtons, 2)...)
 
 	return inlineKeyboard

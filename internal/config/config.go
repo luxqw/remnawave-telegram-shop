@@ -43,6 +43,7 @@ type config struct {
 	serverStatusURL                                           string
 	supportURL                                                string
 	tosURL                                                    string
+	proxyURL                                                  string
 	adminTelegramId                                           int64
 	trialDays                                                 int
 	trialRemnawaveTag                                         string
@@ -209,6 +210,10 @@ func SupportURL() string {
 
 func TosURL() string {
 	return conf.tosURL
+}
+
+func ProxyURL() string {
+	return conf.proxyURL
 }
 
 func Price1() int {
@@ -520,6 +525,7 @@ func InitConfig() {
 	conf.feedbackURL = os.Getenv("FEEDBACK_URL")
 	conf.channelURL = os.Getenv("CHANNEL_URL")
 	conf.tosURL = os.Getenv("TOS_URL")
+	conf.proxyURL = os.Getenv("PROXY_URL")
 
 	conf.squadUUIDs = func() map[uuid.UUID]uuid.UUID {
 		v := os.Getenv("SQUAD_UUIDS")
