@@ -1,4 +1,4 @@
-import { useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api, ApiError } from "../api/client";
 import type { FixStrategyPreview, FixStrategyJobStatus } from "../api/types";
 import { GlassCard } from "../components/GlassCard";
@@ -12,6 +12,10 @@ export function System() {
   const [confirmApplyOpen, setConfirmApplyOpen] = useState(false);
   const [job, setJob] = useState<FixStrategyJobStatus | null>(null);
   const pollRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+  }, []);
 
   const runSync = async () => {
     setSyncing(true);

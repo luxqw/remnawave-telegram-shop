@@ -36,18 +36,26 @@ export function Users() {
   const [pageNum, setPageNum] = useState(1);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Debounce search input — without this, every keystroke fired its own request, most of which
+  // were thrown away as stale before the response even came back.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams({ page: String(pageNum), limit: "20" });
     if (filter) params.set("filter", filter);
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     api
       .get<Page<Customer>>(`/admin/api/users?${params.toString()}`)
       .then(setPage)
       .finally(() => setLoading(false));
-  }, [pageNum, filter, search]);
+  }, [pageNum, filter, debouncedSearch]);
 
   const columns: Column<Customer>[] = [
     {
