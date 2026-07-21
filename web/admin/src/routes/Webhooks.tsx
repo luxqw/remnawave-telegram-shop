@@ -9,20 +9,23 @@ import { useToast } from "../components/Toast";
 import { DetailModal } from "../components/DetailModal";
 
 const STATUSES = ["", "pending", "processed", "failed"];
+const PROVIDERS = ["", "tribute", "rollypay"];
 
 export function Webhooks() {
   const toast = useToast();
   const [page, setPage] = useState<Page<WebhookInboxEntry> | null>(null);
   const [pageNum, setPageNum] = useState(1);
   const [status, setStatus] = useState("failed");
+  const [provider, setProvider] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
   const [detail, setDetail] = useState<WebhookInboxDetail | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams({ page: String(pageNum), limit: "25" });
     if (status) params.set("status", status);
+    if (provider) params.set("provider", provider);
     api.get<Page<WebhookInboxEntry>>(`/admin/api/webhooks?${params.toString()}`).then(setPage);
-  }, [pageNum, status, reloadTick]);
+  }, [pageNum, status, provider, reloadTick]);
 
   const openDetail = (w: WebhookInboxEntry) => {
     api.get<WebhookInboxDetail>(`/admin/api/webhooks/${w.id}`).then(setDetail);
@@ -41,6 +44,7 @@ export function Webhooks() {
   const columns: Column<WebhookInboxEntry>[] = [
     { header: "ID", render: (w) => <span class="mono">{w.id}</span>, sortKey: "id", sortValue: (w) => w.id },
     { header: "Событие", render: (w) => w.eventType || "—", sortKey: "eventType", sortValue: (w) => w.eventType || null },
+    { header: "Провайдер", render: (w) => w.provider, sortKey: "provider", sortValue: (w) => w.provider },
     {
       header: "Статус",
       render: (w) => <Badge variant={w.status === "processed" ? "success" : w.status === "failed" ? "danger" : "neutral"}>{w.status}</Badge>,
@@ -71,6 +75,9 @@ export function Webhooks() {
         <select class="select" value={status} onChange={(e) => { setStatus((e.target as HTMLSelectElement).value); setPageNum(1); }}>
           {STATUSES.map((s) => <option key={s} value={s}>{s || "Все статусы"}</option>)}
         </select>
+        <select class="select" value={provider} onChange={(e) => { setProvider((e.target as HTMLSelectElement).value); setPageNum(1); }}>
+          {PROVIDERS.map((p) => <option key={p} value={p}>{p || "Все провайдеры"}</option>)}
+        </select>
       </div>
       <GlassCard>
         {!page ? (
@@ -85,6 +92,7 @@ export function Webhooks() {
       <DetailModal open={detail !== null} title={`Вебхук #${detail?.id ?? ""}`} onClose={() => setDetail(null)} body={detail && (
         <div class="stack" style={{ gap: 6 }}>
           <div class="data-card-row"><span class="data-card-label">Событие</span><span class="data-card-value">{detail.eventType || "—"}</span></div>
+          <div class="data-card-row"><span class="data-card-label">Провайдер</span><span class="data-card-value">{detail.provider}</span></div>
           <div class="data-card-row"><span class="data-card-label">Статус</span><span class="data-card-value">{detail.status}</span></div>
           <div class="data-card-row"><span class="data-card-label">Попытки</span><span class="data-card-value">{detail.attempts}</span></div>
           <div class="data-card-row"><span class="data-card-label">Создан</span><span class="data-card-value">{new Date(detail.createdAt).toLocaleString("ru-RU")}</span></div>

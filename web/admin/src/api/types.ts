@@ -75,6 +75,7 @@ export interface Referral {
 export interface WebhookInboxEntry {
   id: number;
   eventType: string;
+  provider: string;
   status: string;
   attempts: number;
   errorMsg: string | null;

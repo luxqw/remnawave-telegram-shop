@@ -35,8 +35,9 @@ type webhookInboxDetailDTO struct {
 func (h *Handler) handleWebhooksList(w http.ResponseWriter, r *http.Request) {
 	limit, offset, page := pagination(r)
 	status := r.URL.Query().Get("status")
+	provider := r.URL.Query().Get("provider")
 
-	items, total, err := h.webhookInboxRepository.FindAllPaginated(r.Context(), status, limit, offset)
+	items, total, err := h.webhookInboxRepository.FindAllPaginated(r.Context(), status, provider, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

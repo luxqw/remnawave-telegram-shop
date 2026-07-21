@@ -146,14 +146,18 @@ func (r *WebhookInboxRepository) FindByID(ctx context.Context, id int64) (*Webho
 	return &wh, nil
 }
 
-// FindAllPaginated powers the admin webapp webhook inbox monitoring screen. status filters when
-// non-empty ("pending"/"processed"/"failed"); pass "" for all statuses.
-func (r *WebhookInboxRepository) FindAllPaginated(ctx context.Context, status string, limit, offset int) ([]WebhookInbox, int64, error) {
+// FindAllPaginated powers the admin webapp webhook inbox monitoring screen. status/provider
+// filter when non-empty ("pending"/"processed"/"failed", "tribute"/"rollypay"); pass "" for all.
+func (r *WebhookInboxRepository) FindAllPaginated(ctx context.Context, status, provider string, limit, offset int) ([]WebhookInbox, int64, error) {
 	selectBuilder := sq.Select(webhookInboxSelectCols).From("webhook_inbox")
 	countBuilder := sq.Select("COUNT(*)").From("webhook_inbox")
 	if status != "" {
 		selectBuilder = selectBuilder.Where(sq.Eq{"status": status})
 		countBuilder = countBuilder.Where(sq.Eq{"status": status})
+	}
+	if provider != "" {
+		selectBuilder = selectBuilder.Where(sq.Eq{"provider": provider})
+		countBuilder = countBuilder.Where(sq.Eq{"provider": provider})
 	}
 	selectBuilder = selectBuilder.OrderBy("created_at DESC").Limit(uint64(limit)).Offset(uint64(offset)).PlaceholderFormat(sq.Dollar)
 

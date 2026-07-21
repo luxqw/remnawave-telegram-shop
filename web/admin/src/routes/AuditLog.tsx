@@ -6,6 +6,7 @@ import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
 import { TelegramUserLink } from "../components/TelegramUserLink";
+import { useDebounce } from "../lib/useDebounce";
 
 export function AuditLog() {
   const [page, setPage] = useState<Page<AuditLogEntry> | null>(null);
@@ -13,14 +14,16 @@ export function AuditLog() {
   const [action, setAction] = useState("");
   const [outcome, setOutcome] = useState("");
   const [target, setTarget] = useState("");
+  const debouncedAction = useDebounce(action, 300);
+  const debouncedTarget = useDebounce(target, 300);
 
   useEffect(() => {
     const params = new URLSearchParams({ page: String(pageNum), limit: "30" });
-    if (action) params.set("action", action);
+    if (debouncedAction) params.set("action", debouncedAction);
     if (outcome) params.set("outcome", outcome);
-    if (target) params.set("target", target);
+    if (debouncedTarget) params.set("target", debouncedTarget);
     api.get<Page<AuditLogEntry>>(`/admin/api/audit?${params.toString()}`).then(setPage);
-  }, [pageNum, action, outcome, target]);
+  }, [pageNum, debouncedAction, outcome, debouncedTarget]);
 
   const columns: Column<AuditLogEntry>[] = [
     { header: "Дата", render: (e) => new Date(e.createdAt).toLocaleString("ru-RU") },

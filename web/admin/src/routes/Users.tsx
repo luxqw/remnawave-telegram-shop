@@ -7,6 +7,7 @@ import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
 import { TelegramUserLink } from "../components/TelegramUserLink";
 import { navigate } from "../router";
+import { useDebounce } from "../lib/useDebounce";
 
 const FILTERS = [
   { value: "", label: "Все" },
@@ -36,15 +37,8 @@ export function Users() {
   const [pageNum, setPageNum] = useState(1);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [loading, setLoading] = useState(true);
-
-  // Debounce search input — without this, every keystroke fired its own request, most of which
-  // were thrown away as stale before the response even came back.
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   useEffect(() => {
     setLoading(true);
