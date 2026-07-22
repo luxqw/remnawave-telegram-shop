@@ -71,6 +71,9 @@ func main() {
 	deviceTopupRepository := database.NewDeviceTopupRepository(pool)
 	deviceAddonRepository := database.NewDeviceAddonRepository(pool)
 	auditLogRepository := database.NewAdminAuditLogRepository(pool)
+	if err := auditLogRepository.HealthCheck(ctx); err != nil {
+		panic(fmt.Errorf("admin audit log is unreachable, refusing to start: %w", err))
+	}
 	webhookInboxRepository := database.NewWebhookInboxRepository(pool)
 	activityRepository := database.NewActivityRepository(pool)
 	notificationLogRepository := database.NewNotificationLogRepository(pool)
@@ -213,6 +216,7 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesReset, bot.MatchTypeExact, h.DevicesResetCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesResetConfirm, bot.MatchTypeExact, h.DevicesResetConfirmCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDeviceBuy, bot.MatchTypeExact, h.DeviceBuyCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDeviceCancel, bot.MatchTypePrefix, h.DeviceCancelCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackPayment, bot.MatchTypePrefix, h.PaymentCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackPaymentCancel, bot.MatchTypePrefix, h.PaymentCancelCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 

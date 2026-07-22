@@ -3,7 +3,6 @@
   "buy_button": "💰 Buy",
   "connect_button": "🔌 Connect",
   "back_button": "🔙 Back",
-  "back_keeps_pending_button": "⬅️ Back (doesn't cancel)",
   "pricing_info": "<b>Choose your subscription length</b>",
   "payment_summary": "💳 <b>Subscription for %s</b> — %d ₽\n\nTap \"Pay\" to proceed to payment.",
   "payment_unavailable": "⚠️ Payments are temporarily unavailable. Try again later or contact support.",

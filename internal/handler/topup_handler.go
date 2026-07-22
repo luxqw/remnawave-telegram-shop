@@ -50,16 +50,7 @@ func (h Handler) TopupCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 	if pending != nil {
-		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-			ChatID:    msg.Chat.ID,
-			MessageID: msg.ID,
-			ParseMode: models.ParseModeHTML,
-			Text:      h.translation.GetText(langCode, "topup_pending_warning"),
-			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-				{h.translation.GetButton(langCode, "topup_cancel_button").InlineCallback(fmt.Sprintf("%s?id=%d", CallbackTopupCancel, pending.ID))},
-				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
-			}},
-		})
+		h.showPendingPurchaseWarning(ctx, b, msg.Chat.ID, msg.ID, langCode, fmt.Sprintf("%s?id=%d", CallbackTopupCancel, pending.ID))
 		return
 	}
 	h.showTopupPackages(ctx, b, msg.Chat.ID, msg.ID, langCode)
@@ -194,14 +185,11 @@ func (h Handler) createTopupInvoice(ctx context.Context, b *bot.Bot, chatID int6
 
 	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb, priceRUB)
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    chatID,
-		MessageID: messageID,
-		ParseMode: models.ParseModeHTML,
-		Text:      disclaimer,
-		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-			{{Text: h.translation.GetButton(langCode, "pay_button").Text, URL: paymentResp.PayURL}},
-			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackTopup)},
-		}},
+		ChatID:      chatID,
+		MessageID:   messageID,
+		ParseMode:   models.ParseModeHTML,
+		Text:        disclaimer,
+		ReplyMarkup: h.payOrCancelKeyboard(langCode, paymentResp.PayURL, fmt.Sprintf("%s?id=%d", CallbackTopupCancel, topupID)),
 	})
 }
 

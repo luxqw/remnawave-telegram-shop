@@ -19,5 +19,6 @@ const (
 	CallbackDevicesResetConfirm = "devices_reset_confirm"
 	CallbackDevicesDeleteDevice = "devices_del"
 	CallbackDeviceBuy           = "device_buy"
+	CallbackDeviceCancel        = "device_cancel"
 	CallbackStatus              = "status"
 )
