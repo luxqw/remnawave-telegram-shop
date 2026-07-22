@@ -12,18 +12,9 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// TopupPackageConfig holds configuration for a single traffic top-up package.
-// Deprecated: this is the legacy Tribute-Digital-Product-backed topup config, kept alive only so
-// existing TOPUP_ENABLED deployments keep working. New topups use GBTopupTier + RollyPay instead.
-type TopupPackageConfig struct {
-	GBAmount  int
-	URL       string
-	ProductID int
-}
-
-// GBTopupTier is one bot-owned, bot-priced GB top-up preset sold through RollyPay. Unlike
-// TopupPackageConfig, the bot itself knows the price (RollyPay has no product catalog like
-// Tribute's Digital Products) — needed because the bot builds the payment amount itself.
+// GBTopupTier is one bot-owned, bot-priced GB top-up preset sold through RollyPay — the bot itself
+// knows the price (RollyPay has no product catalog like Tribute's Digital Products), needed
+// because the bot builds the payment amount itself.
 type GBTopupTier struct {
 	GBAmount int
 	PriceRUB int
@@ -70,10 +61,6 @@ type config struct {
 	trafficLimitResetStrategy                                 string
 	topupEnabled                                              bool
 	statusEnabled                                             bool
-	topupPackage10                                            TopupPackageConfig
-	topupPackage25                                            TopupPackageConfig
-	topupPackage50                                            TopupPackageConfig
-	topupPackages                                             map[int]TopupPackageConfig
 	gbTopupTiers                                              []GBTopupTier
 	gbTopupCustomPricePerGB                                   int
 	gbTopupCustomMinGB, gbTopupCustomMaxGB                    int
@@ -315,24 +302,6 @@ func TopupEnabled() bool {
 
 func StatusEnabled() bool {
 	return conf.statusEnabled
-}
-
-func AllTopupPackages() []TopupPackageConfig {
-	return []TopupPackageConfig{conf.topupPackage10, conf.topupPackage25, conf.topupPackage50}
-}
-
-func TopupPackageByProductID(id int) (TopupPackageConfig, bool) {
-	pkg, ok := conf.topupPackages[id]
-	return pkg, ok
-}
-
-func TopupPackageByGB(gb int) *TopupPackageConfig {
-	for _, pkg := range []TopupPackageConfig{conf.topupPackage10, conf.topupPackage25, conf.topupPackage50} {
-		if pkg.GBAmount == gb {
-			return &pkg
-		}
-	}
-	return nil
 }
 
 // GBTopupTiers returns the configured bot-owned, RollyPay-priced GB top-up presets.
@@ -678,24 +647,6 @@ func InitConfig() {
 
 	conf.topupEnabled = envBool("TOPUP_ENABLED")
 	conf.statusEnabled = envBool("STATUS_ENABLED")
-	if conf.topupEnabled {
-		conf.topupPackage10 = parseTopupPackage("10")
-		conf.topupPackage25 = parseTopupPackage("25")
-		conf.topupPackage50 = parseTopupPackage("50")
-
-		if conf.topupPackage10.URL == "" || conf.topupPackage25.URL == "" || conf.topupPackage50.URL == "" {
-			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_URL not set")
-		}
-		if conf.topupPackage10.ProductID == 0 || conf.topupPackage25.ProductID == 0 || conf.topupPackage50.ProductID == 0 {
-			panic("TOPUP_ENABLED=true but one or more TOPUP_PACKAGE_*_ID not set (create Digital Products in Tribute first)")
-		}
-
-		conf.topupPackages = map[int]TopupPackageConfig{
-			conf.topupPackage10.ProductID: conf.topupPackage10,
-			conf.topupPackage25.ProductID: conf.topupPackage25,
-			conf.topupPackage50.ProductID: conf.topupPackage50,
-		}
-	}
 
 	conf.adminWebAppEnabled = envBool("ADMIN_WEBAPP_ENABLED")
 	if conf.adminWebAppEnabled {
@@ -734,21 +685,4 @@ func parseGBTopupTiers(v string) []GBTopupTier {
 		panic("GB_TOPUP_TIERS is set but contains no valid entries")
 	}
 	return tiers
-}
-
-func parseTopupPackage(gb string) TopupPackageConfig {
-	gbInt := 0
-	switch gb {
-	case "10":
-		gbInt = 10
-	case "25":
-		gbInt = 25
-	case "50":
-		gbInt = 50
-	}
-	return TopupPackageConfig{
-		GBAmount:  gbInt,
-		URL:       envStringDefault("TOPUP_PACKAGE_"+gb+"GB_URL", ""),
-		ProductID: envIntDefault("TOPUP_PACKAGE_"+gb+"GB_ID", 0),
-	}
 }

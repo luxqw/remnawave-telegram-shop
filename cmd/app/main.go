@@ -128,7 +128,7 @@ func main() {
 	// nil when Tribute webhooks aren't configured, and every consumer treats that as optional.
 	var tributeClient *tribute.Client
 	if config.GetTributeWebHookUrl() != "" {
-		tributeClient = tribute.NewClient(paymentService, customerRepository, topupRepository, webhookInboxRepository, remnawaveClient, b, tm)
+		tributeClient = tribute.NewClient(paymentService, customerRepository, webhookInboxRepository, remnawaveClient, b, tm)
 	}
 
 	// rollypayWebhookClient is likewise nil when RollyPay isn't configured; every consumer

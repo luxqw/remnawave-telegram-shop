@@ -203,8 +203,8 @@ func (c *WebhookClient) handleSubscriptionPaid(ctx context.Context, orderID stri
 	return c.paymentService.ProcessPurchaseById(ctx, id)
 }
 
-// handleTopupPaid applies a GB top-up, mirroring tribute.go's handleTopupPayment/applyTopup:
-// fetch the customer's current Remnawave traffic limit, add the purchased GB on top, PATCH it,
+// handleTopupPaid applies a GB top-up: fetch the customer's current Remnawave traffic limit, add
+// the purchased GB on top, PATCH it,
 // then mark the row completed with the target bytes recorded (payment.go's rollover logic reads
 // that column, so this is required for the top-up to survive the next subscription renewal).
 func (c *WebhookClient) handleTopupPaid(ctx context.Context, orderID, paymentID string) error {

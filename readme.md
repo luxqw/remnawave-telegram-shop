@@ -127,17 +127,8 @@ The application requires the following environment variables to be set:
 | `TRIBUTE_PAYMENT_URL`    | You payment url for Tribute. (Subscription telegram link)                                                                                  |
 | `TELEGRAM_PROXY_URL`     | Proxy URL for Telegram Bot API requests (optional, e.g., `socks5://host:port` or `http://host:port`)                                      |
 | `MOYNALOG_PROXY_URL`     | Proxy URL for Moy Nalog API requests (optional, e.g., `socks5://host:port` or `http://host:port`)                                         |
-| `TOPUP_ENABLED`          | Enable traffic top-up purchases via Tribute (true/false). Default: false. All `TOPUP_PACKAGE_*` vars must be set before enabling.         |
+| `TOPUP_ENABLED`          | Enable the traffic top-up menu, billed via RollyPay per `GB_TOPUP_TIERS` (true/false). Default: false.                                    |
 | `TOPUP_PRICE_CURRENCY`   | Currency symbol displayed in top-up buttons (e.g., `₽`). Default: `₽`.                                                                   |
-| `TOPUP_PACKAGE_10GB_ID`  | Tribute `subscription_id` for the 10 GB package (from Tribute app).                                                                       |
-| `TOPUP_PACKAGE_10GB_URL` | Tribute payment URL for the 10 GB package (e.g., `https://t.me/tribute/app?startapp=xxx`).                                                |
-| `TOPUP_PACKAGE_10GB_PRICE` | Display price for 10 GB package (shown in bot UI; actual price set in Tribute).                                                          |
-| `TOPUP_PACKAGE_25GB_ID`  | Tribute `subscription_id` for the 25 GB package.                                                                                          |
-| `TOPUP_PACKAGE_25GB_URL` | Tribute payment URL for the 25 GB package.                                                                                                 |
-| `TOPUP_PACKAGE_25GB_PRICE` | Display price for 25 GB package.                                                                                                         |
-| `TOPUP_PACKAGE_50GB_ID`  | Tribute `subscription_id` for the 50 GB package.                                                                                          |
-| `TOPUP_PACKAGE_50GB_URL` | Tribute payment URL for the 50 GB package.                                                                                                 |
-| `TOPUP_PACKAGE_50GB_PRICE` | Display price for 50 GB package.                                                                                                         |
 | `ADMIN_WEBAPP_ENABLED`  | Enable the admin web app (Telegram Mini App), served at `/admin/` on the same port as `/healthcheck` (true/false). Default: false.        |
 | `ADMIN_WEBAPP_JWT_SECRET` | Secret used to sign admin web app session tokens. Required when `ADMIN_WEBAPP_ENABLED=true`. Must be different from the bot token.      |
 | `ADMIN_WEBAPP_URL`      | Public HTTPS URL of the admin web app (e.g. `https://your-domain.example/admin/`). When set, a "🌐 Веб-панель" button appears in `/admin` for the configured admin only. |

@@ -1,10 +1,7 @@
 package tribute
 
 import (
-	"fmt"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type SubscriptionWebhook struct {
@@ -24,23 +21,9 @@ type Payload struct {
 	ChannelID        int       `json:"channel_id"`
 	ChannelName      string    `json:"channel_name"`
 	ExpiresAt        time.Time `json:"expires_at"`
-	// Digital product fields
-	ProductID         int       `json:"product_id"`
-	PurchaseID        int       `json:"purchase_id"`
-	TransactionID     int       `json:"transaction_id"`
-	ProductName       string    `json:"product_name"`
-	PurchaseCreatedAt time.Time `json:"purchase_created_at"`
 	// Common fields
 	Amount         int    `json:"amount"` // minor units (kopecks) — divide by 100 for whole rubles
 	Currency       string `json:"currency"`
 	UserID         int    `json:"user_id"`
 	TelegramUserID int64  `json:"telegram_user_id"`
-}
-
-func parseUUID(s string) (uuid.UUID, error) {
-	u, err := uuid.Parse(s)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("parse uuid %q: %w", s, err)
-	}
-	return u, nil
 }

@@ -11,25 +11,21 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	"math"
 	"net/http"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/payment"
 	"remnawave-tg-shop-bot/internal/remnawave"
 	"remnawave-tg-shop-bot/internal/translation"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 )
 
 type Client struct {
 	paymentService     *payment.PaymentService
 	customerRepository *database.CustomerRepository
-	topupRepository    *database.TrafficTopupRepository
 	webhookInbox       *database.WebhookInboxRepository
 	remnawaveClient    *remnawave.Client
 	telegramBot        *bot.Bot
@@ -39,14 +35,12 @@ type Client struct {
 const (
 	CancelledSubscription = "cancelled_subscription"
 	NewSubscription       = "new_subscription"
-	NewDigitalProduct     = "new_digital_product"
 	TestHook              = ""
 )
 
 func NewClient(
 	paymentService *payment.PaymentService,
 	customerRepository *database.CustomerRepository,
-	topupRepository *database.TrafficTopupRepository,
 	webhookInbox *database.WebhookInboxRepository,
 	remnawaveClient *remnawave.Client,
 	telegramBot *bot.Bot,
@@ -55,7 +49,6 @@ func NewClient(
 	return &Client{
 		paymentService:     paymentService,
 		customerRepository: customerRepository,
-		topupRepository:    topupRepository,
 		webhookInbox:       webhookInbox,
 		remnawaveClient:    remnawaveClient,
 		telegramBot:        telegramBot,
@@ -128,13 +121,6 @@ func (c *Client) WebHookHandler() http.Handler {
 
 func (c *Client) dispatch(ctx context.Context, wh SubscriptionWebhook, body []byte) error {
 	switch wh.Name {
-	case NewDigitalProduct:
-		if config.TopupEnabled() {
-			if pkg, ok := config.TopupPackageByProductID(wh.Payload.ProductID); ok {
-				return c.handleTopupPayment(ctx, wh, pkg)
-			}
-		}
-		slog.Warn("webhook: unknown digital product", "product_id", wh.Payload.ProductID)
 	case NewSubscription:
 		return c.newSubscriptionHandler(ctx, wh)
 	case CancelledSubscription:
@@ -219,142 +205,6 @@ func (c *Client) newSubscriptionHandler(ctx context.Context, wh SubscriptionWebh
 		slog.Error("newSubscription: reset tribute autorenew streak failed", "customer_id", customer.ID, "error", err)
 	}
 	return nil
-}
-
-func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook, pkg config.TopupPackageConfig) error {
-	telegramID := wh.Payload.TelegramUserID
-	tributePaymentID := strconv.Itoa(wh.Payload.PurchaseID)
-	gbAmount := pkg.GBAmount
-
-	existing, err := c.topupRepository.FindByTributePaymentID(ctx, tributePaymentID)
-	if err != nil {
-		return fmt.Errorf("topup: find by payment id: %w", err)
-	}
-	if existing != nil && existing.Status == database.TopupStatusCompleted {
-		slog.Info("topup: duplicate webhook, already completed", "tribute_payment_id", tributePaymentID)
-		return nil
-	}
-	rwUsers, err := c.remnawaveClient.GetUsersByTelegramID(ctx, telegramID)
-	if err != nil {
-		return fmt.Errorf("topup: get remnawave user: %w", err)
-	}
-	if len(rwUsers) == 0 {
-		c.notifyUserKey(ctx, telegramID, "tribute_topup_user_not_found")
-		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: Remnawave user not found for telegram_id=%d, pkg=%dGB", telegramID, gbAmount))
-		return fmt.Errorf("topup: remnawave user not found for telegram_id %d", telegramID)
-	}
-	rwUser := rwUsers[0]
-
-	if existing != nil && existing.Status == database.TopupStatusProcessing && existing.TargetTrafficLimitBytes != nil {
-		return c.applyTopup(ctx, existing.ID, existing.RemnawaveUUID, telegramID, *existing.TargetTrafficLimitBytes, gbAmount, rwUser.TrafficLimitStrategy)
-	}
-
-	if rwUser.TrafficLimitBytes == 0 {
-		slog.Warn("topup: user has unlimited traffic, skipping", "telegram_id", telegramID)
-		c.notifyUserKey(ctx, telegramID, "tribute_topup_unlimited")
-		payID := tributePaymentID
-		_, _ = c.topupRepository.Create(ctx, &database.TrafficTopup{
-			TelegramID: telegramID, RemnawaveUUID: rwUser.UUID.String(), GBAmount: gbAmount,
-			PriceAmount: float64(wh.Payload.Amount) / 100, Currency: wh.Payload.Currency,
-			TributePaymentID: &payID, Status: database.TopupStatusCompleted,
-		})
-		return nil
-	}
-
-	status := strings.ToUpper(rwUser.Status)
-	if status != "ACTIVE" && status != "LIMITED" {
-		slog.Warn("topup: user not eligible in Remnawave", "telegram_id", telegramID, "status", rwUser.Status)
-		c.notifyUserKey(ctx, telegramID, "tribute_topup_not_eligible")
-		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: user %d not eligible (status=%s), pkg=%dGB", telegramID, rwUser.Status, gbAmount))
-		return fmt.Errorf("topup: user %d not eligible: %s", telegramID, rwUser.Status)
-	}
-
-	targetBytes := int64(rwUser.TrafficLimitBytes) + int64(gbAmount)*int64(config.BytesInGigabyte())
-	remnaUUID := rwUser.UUID.String()
-
-	var topupID int64
-	if existing != nil {
-		topupID = existing.ID
-	} else {
-		pending, err := c.topupRepository.FindPendingByTelegramIDAndGB(ctx, telegramID, gbAmount)
-		if err != nil {
-			return fmt.Errorf("topup: find pending: %w", err)
-		}
-		if pending != nil {
-			if err := c.topupRepository.MarkProcessing(ctx, pending.ID, tributePaymentID, remnaUUID, targetBytes); err != nil {
-				return fmt.Errorf("topup: mark processing: %w", err)
-			}
-			topupID = pending.ID
-		} else {
-			payID := tributePaymentID
-			tb := targetBytes
-			id, err := c.topupRepository.Create(ctx, &database.TrafficTopup{
-				TelegramID: telegramID, RemnawaveUUID: remnaUUID, GBAmount: gbAmount,
-				PriceAmount: float64(wh.Payload.Amount) / 100, Currency: wh.Payload.Currency,
-				TributePaymentID: &payID, TargetTrafficLimitBytes: &tb, Status: database.TopupStatusProcessing,
-			})
-			if err != nil {
-				return fmt.Errorf("topup: create record: %w", err)
-			}
-			topupID = id
-		}
-	}
-	return c.applyTopup(ctx, topupID, remnaUUID, telegramID, targetBytes, gbAmount, rwUser.TrafficLimitStrategy)
-}
-
-func (c *Client) applyTopup(ctx context.Context, topupID int64, remnaUUID string, telegramID int64, targetBytes int64, gbAmount int, strategy string) error {
-	rwUUID, err := parseUUID(remnaUUID)
-	if err != nil {
-		return fmt.Errorf("topup: parse uuid %q: %w", remnaUUID, err)
-	}
-	if targetBytes > math.MaxInt {
-		return fmt.Errorf("topup: target %d overflows int", targetBytes)
-	}
-	if err := c.remnawaveClient.UpdateUserTrafficLimit(ctx, rwUUID, int(targetBytes), strategy); err != nil {
-		_ = c.topupRepository.MarkFailed(ctx, topupID)
-		c.notifyAdmin(ctx, fmt.Sprintf("Top-up: Remnawave UpdateUser failed for telegram_id=%d, pkg=%dGB: %v", telegramID, gbAmount, err))
-		return fmt.Errorf("topup: remnawave update: %w", err)
-	}
-	if err := c.topupRepository.MarkCompleted(ctx, topupID); err != nil {
-		slog.Error("topup: mark completed failed (Remnawave already updated)", "error", err, "topup_id", topupID)
-	}
-	newLimitGB := int(targetBytes) / int(config.BytesInGigabyte())
-	c.notifyUserKey(ctx, telegramID, "tribute_topup_success", gbAmount, newLimitGB)
-	slog.Info("topup: completed", "telegram_id", telegramID, "gb_amount", gbAmount, "new_limit_gb", newLimitGB)
-	return nil
-}
-
-func (c *Client) notifyUser(ctx context.Context, telegramID int64, text string) {
-	_, err := c.telegramBot.SendMessage(ctx, &bot.SendMessageParams{ChatID: telegramID, Text: text, ParseMode: models.ParseModeHTML})
-	if err != nil {
-		slog.Error("topup: failed to send user message", "telegram_id", telegramID, "error", err)
-	}
-}
-
-// notifyUserKey resolves the customer's language, looks up text by translation key, formats it
-// with args when provided, and sends it via notifyUser. Mirrors adminops.Service.notifyKey — same
-// fix for the same disease (hardcoded Russian strings bypassing the translation system), but with
-// its own key set since self-service topup wording differs from admin-triggered topup wording.
-func (c *Client) notifyUserKey(ctx context.Context, telegramID int64, key string, args ...any) {
-	if c.translation == nil {
-		return
-	}
-	lang := ""
-	if customer, err := c.customerRepository.FindByTelegramId(ctx, telegramID); err == nil && customer != nil {
-		lang = customer.Language
-	}
-	text := c.translation.GetText(lang, key)
-	if len(args) > 0 {
-		text = fmt.Sprintf(text, args...)
-	}
-	c.notifyUser(ctx, telegramID, text)
-}
-
-func (c *Client) notifyAdmin(ctx context.Context, text string) {
-	_, err := c.telegramBot.SendMessage(ctx, &bot.SendMessageParams{ChatID: config.GetAdminTelegramId(), Text: text})
-	if err != nil {
-		slog.Error("topup: failed to send admin message", "error", err)
-	}
 }
 
 func convertPeriodToMonths(period string) int {

@@ -127,8 +127,12 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 				ParseMode: models.ParseModeHTML,
 				Text:      h.translation.GetText(langCode, "topup_pending_warning"),
 				ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+					// Cancel immediately lifts the pending block (FindRecentPendingByCustomerID);
+					// Back just navigates away and leaves it in place — RollyPay has no cancel/void
+					// API to call either way, so this button copy is the only distinction that
+					// exists (decision 7).
 					{h.translation.GetButton(langCode, "topup_cancel_button").InlineCallback(fmt.Sprintf("%s?id=%d", CallbackPaymentCancel, pending.ID))},
-					{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+					{h.translation.GetButton(langCode, "back_keeps_pending_button").InlineCallback(CallbackStart)},
 				}},
 			})
 			return
@@ -158,7 +162,10 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
 					h.translation.GetButton(langCode, "pay_button").InlineURL(paymentURL),
-					h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackBuy),
+					// This purchase is now pending (30-min block) — Back only navigates, it does not
+					// cancel it. To actually cancel, the customer has to come back here and use the
+					// pending-purchase screen's Cancel button above.
+					h.translation.GetButton(langCode, "back_keeps_pending_button").InlineCallback(CallbackBuy),
 				},
 			},
 		},
