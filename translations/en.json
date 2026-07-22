@@ -100,6 +100,8 @@
   "device_disclaimer_standalone": "➕ <b>+1 device slot</b> — %d ₽ (prorated for the days left in this cycle)\n\nFrom now on it renews separately, every ~30 days.",
   "device_addon_renewal_reminder": "🔁 <b>Device slot renewal</b>\n\nYou have %d extra device slot(s). Renewal cost — %d ₽.\n\nPay to keep your current device limit.",
   "device_addon_renewed": "✅ Device slots (%d) renewed for another cycle.",
+  "device_addon_grace_started": "⚠️ <b>Device slot payment not received</b>\n\nYou have %d extra device slot(s). Pay %d ₽ within 24 hours, or your device limit will be reduced.",
+  "device_addon_expired": "❌ Device slots (%d) removed due to non-payment. Your device limit has been reduced.",
   "device_no_subscription": "❌ Buying extra device slots requires an active subscription.\n\nGet a subscription — the \"Buy\" button.",
   "device_trial_only": "⚠️ Buying extra device slots is only available on a paid subscription.",
   "admin_message_prefix": "✉️ Message from the administrator:\n\n%s"

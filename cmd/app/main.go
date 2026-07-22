@@ -137,10 +137,14 @@ func main() {
 	if config.IsRollyPayEnabled() {
 		rollypayWebhookClient = rollypay.NewWebhookClient(rollypayClient, paymentService, purchaseRepository, customerRepository, topupRepository, deviceTopupRepository, deviceAddonRepository, webhookInboxRepository, remnawaveClient, b, tm)
 
-		deviceAddonRenewalSvc := notification.NewDeviceAddonRenewalService(deviceAddonRepository, rollypayClient, b, tm, notificationLogRepository)
+		deviceAddonRenewalSvc := notification.NewDeviceAddonRenewalService(deviceAddonRepository, rollypayClient, remnawaveClient, b, tm, notificationLogRepository)
 		deviceAddonRenewalCron := deviceAddonRenewalChecker(deviceAddonRenewalSvc)
 		deviceAddonRenewalCron.Start()
 		defer deviceAddonRenewalCron.Stop()
+
+		deviceAddonGraceCron := deviceAddonGraceChecker(deviceAddonRenewalSvc)
+		deviceAddonGraceCron.Start()
+		defer deviceAddonGraceCron.Stop()
 	}
 
 	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, notificationLogRepository, remnawaveClient, syncService, b, tm)
@@ -364,6 +368,21 @@ func deviceAddonRenewalChecker(svc *notification.DeviceAddonRenewalService) *cro
 	_, err := c.AddFunc("0 */4 * * *", func() {
 		if err := svc.ProcessRenewalReminders(); err != nil {
 			slog.Error("Error sending device addon renewal reminders", "error", err)
+		}
+	})
+
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func deviceAddonGraceChecker(svc *notification.DeviceAddonRenewalService) *cron.Cron {
+	c := cron.New()
+
+	_, err := c.AddFunc("0 */4 * * *", func() {
+		if err := svc.ProcessGraceAndExpiry(); err != nil {
+			slog.Error("Error processing device addon grace/expiry", "error", err)
 		}
 	})
 
