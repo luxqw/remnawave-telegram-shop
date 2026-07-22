@@ -12,17 +12,21 @@ import (
 )
 
 type deviceAddonRepoMock struct {
+	expiringBefore []*database.DeviceAddon
+	graceExpired   []*database.DeviceAddon
+	markGraceIDs   []int64
 	markExpiredIDs []int64
 	markExpiredErr error
 }
 
 func (m *deviceAddonRepoMock) FindActiveExpiringBefore(ctx context.Context, cutoff time.Time) ([]*database.DeviceAddon, error) {
-	return nil, nil
+	return m.expiringBefore, nil
 }
 func (m *deviceAddonRepoMock) FindGraceExpiredBefore(ctx context.Context, cutoff time.Time) ([]*database.DeviceAddon, error) {
-	return nil, nil
+	return m.graceExpired, nil
 }
 func (m *deviceAddonRepoMock) MarkGrace(ctx context.Context, id int64, graceUntil time.Time) error {
+	m.markGraceIDs = append(m.markGraceIDs, id)
 	return nil
 }
 func (m *deviceAddonRepoMock) MarkExpired(ctx context.Context, id int64) error {
@@ -74,7 +78,7 @@ func TestExpireAndShrink_ShrinksLimitAndTrimsOldestDevices(t *testing.T) {
 	repo := &deviceAddonRepoMock{}
 	svc := &DeviceAddonRenewalService{deviceAddonRepository: repo, remnawaveClient: rw, tm: nil, telegramBot: nil}
 
-	addon := &database.DeviceAddon{ID: 7, TelegramID: 42, DeviceCount: 2}
+	addon := &database.DeviceAddon{ID: 7, TelegramID: 42, DeviceCount: 2, BillingMode: database.AddonBillingModeStandalone}
 	svc.expireAndShrink(context.Background(), addon)
 
 	if len(repo.markExpiredIDs) != 1 || repo.markExpiredIDs[0] != 7 {
@@ -94,6 +98,48 @@ func TestExpireAndShrink_ShrinksLimitAndTrimsOldestDevices(t *testing.T) {
 	}
 }
 
+// TestEnterGrace_SkipsBundledAddons is a regression test for a bug caught in review: enterGrace
+// was missing the same BillingMode == standalone guard ProcessRenewalReminders has, so a bundled
+// (RollyPay) customer whose subscription lapsed unrenewed would get pushed into grace and sent a
+// separate standalone device-addon pay link — exactly the per-customer variable charge decision 3
+// says bundled customers must never receive. rollypayClient/tm/telegramBot are deliberately left
+// nil: if the guard regresses, enterGrace would call MarkGrace then crash reaching
+// sendRenewalPayLink, which itself is proof enough that the bundled addon isn't supposed to get
+// there — the assertion below additionally verifies MarkGrace is never called for it.
+func TestEnterGrace_SkipsBundledAddons(t *testing.T) {
+	bundled := &database.DeviceAddon{ID: 3, TelegramID: 99, BillingMode: database.AddonBillingModeBundled}
+	repo := &deviceAddonRepoMock{expiringBefore: []*database.DeviceAddon{bundled}}
+	svc := &DeviceAddonRenewalService{deviceAddonRepository: repo}
+
+	if err := svc.enterGrace(context.Background()); err != nil {
+		t.Fatalf("enterGrace returned error: %v", err)
+	}
+
+	if len(repo.markGraceIDs) != 0 {
+		t.Fatalf("bundled addon must never enter grace via this cron, got MarkGrace calls: %v", repo.markGraceIDs)
+	}
+}
+
+// TestExpireAndShrink_SkipsBundledAddons is the defense-in-depth counterpart: even if a bundled
+// addon somehow reached expireGraced (e.g. a row marked grace by a pre-fix build), it must not be
+// expired or have its device limit trimmed by this cron — bundled device limits are governed by
+// the subscription's own expiry, not by the addon-specific grace/trim mechanism.
+func TestExpireAndShrink_SkipsBundledAddons(t *testing.T) {
+	rw := &remnawaveDeviceClientMock{}
+	repo := &deviceAddonRepoMock{}
+	svc := &DeviceAddonRenewalService{deviceAddonRepository: repo, remnawaveClient: rw}
+
+	bundled := &database.DeviceAddon{ID: 11, TelegramID: 99, DeviceCount: 2, BillingMode: database.AddonBillingModeBundled}
+	svc.expireAndShrink(context.Background(), bundled)
+
+	if len(repo.markExpiredIDs) != 0 {
+		t.Fatalf("bundled addon must not be marked expired by this cron, got: %v", repo.markExpiredIDs)
+	}
+	if rw.updatedLimit != nil {
+		t.Fatalf("bundled addon's device limit must not be touched by this cron, got: %v", *rw.updatedLimit)
+	}
+}
+
 func TestExpireAndShrink_FloorsLimitAtZero(t *testing.T) {
 	limit := 1
 	rw := &remnawaveDeviceClientMock{
@@ -102,7 +148,7 @@ func TestExpireAndShrink_FloorsLimitAtZero(t *testing.T) {
 	repo := &deviceAddonRepoMock{}
 	svc := &DeviceAddonRenewalService{deviceAddonRepository: repo, remnawaveClient: rw}
 
-	addon := &database.DeviceAddon{ID: 9, TelegramID: 42, DeviceCount: 5}
+	addon := &database.DeviceAddon{ID: 9, TelegramID: 42, DeviceCount: 5, BillingMode: database.AddonBillingModeStandalone}
 	svc.expireAndShrink(context.Background(), addon)
 
 	if rw.updatedLimit == nil || *rw.updatedLimit != 0 {

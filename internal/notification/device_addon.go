@@ -121,12 +121,22 @@ func (s *DeviceAddonRenewalService) ProcessGraceAndExpiry() error {
 	return s.expireGraced(ctx)
 }
 
+// enterGrace only acts on standalone addons. Bundled addons' cycle_expires_at is kept synced to
+// customer.ExpireAt and pushed forward by payment.PaymentService.ProcessPurchaseById on every
+// subscription renewal (decision 2) — they never carry an independent charge, so there is nothing
+// for this cron to remind or grace-gate separately. If a bundled customer's subscription lapses,
+// that is already handled by the existing subscription-expiry reminder/enforcement path; sending a
+// standalone device-addon pay link on top of it would charge them the exact per-customer variable
+// fee decision 3 says bundled (RollyPay) customers must never see.
 func (s *DeviceAddonRenewalService) enterGrace(ctx context.Context) error {
 	lapsed, err := s.deviceAddonRepository.FindActiveExpiringBefore(ctx, time.Now())
 	if err != nil {
 		return fmt.Errorf("find lapsed device addons: %w", err)
 	}
 	for _, addon := range lapsed {
+		if addon.BillingMode != database.AddonBillingModeStandalone {
+			continue
+		}
 		graceUntil := addon.CycleExpiresAt.Add(deviceAddonGracePeriod)
 		if err := s.deviceAddonRepository.MarkGrace(ctx, addon.ID, graceUntil); err != nil {
 			slog.Error("device addon grace: mark grace failed", "addon_id", addon.ID, "error", err)
@@ -154,6 +164,15 @@ func (s *DeviceAddonRenewalService) expireGraced(ctx context.Context) error {
 }
 
 func (s *DeviceAddonRenewalService) expireAndShrink(ctx context.Context, addon *database.DeviceAddon) {
+	// Defense in depth: enterGrace no longer marks bundled addons as grace, so this should be
+	// unreachable for BillingMode == bundled — guarded anyway in case a row was marked grace by an
+	// older build before this fix shipped. Trimming a bundled customer's devices here would be
+	// wrong regardless: their device limit is governed by the subscription's own expiry, not by
+	// this addon-specific cron.
+	if addon.BillingMode != database.AddonBillingModeStandalone {
+		slog.Warn("device addon expiry: skipping non-standalone addon reached via grace expiry", "addon_id", addon.ID, "billing_mode", addon.BillingMode)
+		return
+	}
 	if err := s.deviceAddonRepository.MarkExpired(ctx, addon.ID); err != nil {
 		slog.Error("device addon expiry: mark expired failed", "addon_id", addon.ID, "error", err)
 		return
