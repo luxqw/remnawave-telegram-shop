@@ -40,8 +40,10 @@ type WebhookClient struct {
 	payments              *Client
 	paymentService        purchaseProcessor
 	purchaseRepository    *database.PurchaseRepository
+	customerRepository    *database.CustomerRepository
 	topupRepository       *database.TrafficTopupRepository
 	deviceTopupRepository *database.DeviceTopupRepository
+	deviceAddonRepository *database.DeviceAddonRepository
 	webhookInbox          *database.WebhookInboxRepository
 	remnawaveClient       *remnawave.Client
 	telegramBot           *bot.Bot
@@ -52,8 +54,10 @@ func NewWebhookClient(
 	payments *Client,
 	paymentService purchaseProcessor,
 	purchaseRepository *database.PurchaseRepository,
+	customerRepository *database.CustomerRepository,
 	topupRepository *database.TrafficTopupRepository,
 	deviceTopupRepository *database.DeviceTopupRepository,
+	deviceAddonRepository *database.DeviceAddonRepository,
 	webhookInbox *database.WebhookInboxRepository,
 	remnawaveClient *remnawave.Client,
 	telegramBot *bot.Bot,
@@ -63,8 +67,10 @@ func NewWebhookClient(
 		payments:              payments,
 		paymentService:        paymentService,
 		purchaseRepository:    purchaseRepository,
+		customerRepository:    customerRepository,
 		topupRepository:       topupRepository,
 		deviceTopupRepository: deviceTopupRepository,
+		deviceAddonRepository: deviceAddonRepository,
 		webhookInbox:          webhookInbox,
 		remnawaveClient:       remnawaveClient,
 		telegramBot:           telegramBot,
@@ -170,6 +176,8 @@ func (c *WebhookClient) handlePaid(ctx context.Context, wh WebhookPayload) error
 		return c.handleTopupPaid(ctx, orderID, wh.PaymentID)
 	case strings.HasPrefix(orderID, "device-"):
 		return c.handleDevicePaid(ctx, orderID, wh.PaymentID)
+	case strings.HasPrefix(orderID, "addon-"):
+		return c.handleDeviceAddonRenewalPaid(ctx, orderID)
 	default:
 		slog.Warn("rollypay webhook: unrecognized order_id prefix", "order_id", orderID)
 		return nil
@@ -295,6 +303,102 @@ func (c *WebhookClient) handleDevicePaid(ctx context.Context, orderID, paymentID
 
 	c.notifyUserKey(ctx, t.TelegramID, "device_topup_success", targetLimit)
 	slog.Info("rollypay device topup: completed", "telegram_id", t.TelegramID, "new_limit", targetLimit)
+
+	// Best-effort: the Remnawave HWID bump above is the source of truth and must never be retried
+	// (a retry would double it), so any failure past this point is logged, not returned — returning
+	// an error here would mark the webhook failed and RetryFailed would re-dispatch, but t.Status is
+	// already Completed by then and the early duplicate-check above would just no-op forever.
+	c.upsertDeviceAddon(ctx, t)
+	return nil
+}
+
+// upsertDeviceAddon keeps the device_addons "current recurring state" row in sync with a completed
+// device-slot purchase: bumps DeviceCount on an existing addon, or creates one on a customer's
+// first device purchase — picking its billing mode and initial cycle the same way
+// payment.PaymentService.DetermineDeviceAddonBillingMode does (duplicated here rather than shared,
+// since payment.go itself calls into this package's Client and importing payment would cycle).
+func (c *WebhookClient) upsertDeviceAddon(ctx context.Context, t *database.DeviceTopup) {
+	if c.deviceAddonRepository == nil {
+		return
+	}
+	existing, err := c.deviceAddonRepository.FindActiveByTelegramID(ctx, t.TelegramID)
+	if err != nil {
+		slog.Error("device topup: find existing device addon failed", "telegram_id", t.TelegramID, "error", err)
+		return
+	}
+	if existing != nil && existing.Status != database.AddonStatusExpired {
+		if err := c.deviceAddonRepository.UpdateDeviceCount(ctx, existing.ID, existing.DeviceCount+t.DeviceCount); err != nil {
+			slog.Error("device topup: update device addon count failed", "addon_id", existing.ID, "error", err)
+		}
+		return
+	}
+
+	customer, err := c.customerRepository.FindByTelegramId(ctx, t.TelegramID)
+	if err != nil || customer == nil {
+		slog.Error("device topup: find customer for new device addon failed", "telegram_id", t.TelegramID, "error", err)
+		return
+	}
+	tributes, err := c.purchaseRepository.FindLatestActiveTributesByCustomerIDs(ctx, []int64{customer.ID})
+	if err != nil {
+		slog.Error("device topup: find tributes for billing mode failed", "telegram_id", t.TelegramID, "error", err)
+		return
+	}
+	billingMode := database.DetermineAddonBillingMode(*tributes)
+
+	cycleExpiresAt := time.Now().AddDate(0, 0, config.DaysInMonth())
+	if billingMode == database.AddonBillingModeBundled && customer.ExpireAt != nil {
+		cycleExpiresAt = *customer.ExpireAt
+	}
+
+	if _, err := c.deviceAddonRepository.Create(ctx, &database.DeviceAddon{
+		TelegramID:     t.TelegramID,
+		DeviceCount:    t.DeviceCount,
+		BillingMode:    billingMode,
+		CycleExpiresAt: cycleExpiresAt,
+		Status:         database.AddonStatusActive,
+	}); err != nil {
+		slog.Error("device topup: create device addon failed", "telegram_id", t.TelegramID, "error", err)
+	}
+}
+
+// handleDeviceAddonRenewalPaid extends a standalone-billed device addon's own cycle after its
+// independent RollyPay renewal invoice is paid (see DeviceAddonRenewalService, which generates
+// these invoices for Tribute-linked customers whose subscription charge can't include a variable
+// device cost). Bundled addons never reach here — their renewal rides the subscription invoice
+// and is synced in payment.PaymentService.ProcessPurchaseById instead.
+func (c *WebhookClient) handleDeviceAddonRenewalPaid(ctx context.Context, orderID string) error {
+	id, err := parsePurchaseID(orderID, "addon-")
+	if err != nil {
+		return err
+	}
+	addon, err := c.deviceAddonRepository.FindByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("find device addon %d: %w", id, err)
+	}
+	if addon == nil {
+		return fmt.Errorf("device addon %d not found", id)
+	}
+
+	// Idempotency: there's no separate "pending renewal" row to key off (unlike device_topups'
+	// Status check above) since the reminder doesn't create one — a cycle already pushed out
+	// almost a full period means this exact payment.paid event was already applied, most likely a
+	// RollyPay redelivery.
+	alreadyRenewedCutoff := time.Now().Add(time.Duration(config.DaysInMonth()-1) * 24 * time.Hour)
+	if addon.CycleExpiresAt.After(alreadyRenewedCutoff) {
+		slog.Info("rollypay webhook: duplicate addon renewal payment.paid, already applied", "addon_id", id)
+		return nil
+	}
+
+	newCycleExpiresAt := addon.CycleExpiresAt.AddDate(0, 0, config.DaysInMonth())
+	if newCycleExpiresAt.Before(time.Now()) {
+		newCycleExpiresAt = time.Now().AddDate(0, 0, config.DaysInMonth())
+	}
+	if err := c.deviceAddonRepository.ExtendCycle(ctx, addon.ID, newCycleExpiresAt); err != nil {
+		return fmt.Errorf("extend device addon cycle: %w", err)
+	}
+
+	c.notifyUserKey(ctx, addon.TelegramID, "device_addon_renewed", addon.DeviceCount)
+	slog.Info("rollypay device addon: renewed", "telegram_id", addon.TelegramID, "addon_id", id, "new_cycle_expires_at", newCycleExpiresAt)
 	return nil
 }
 
@@ -323,6 +427,12 @@ func (c *WebhookClient) handleNotPaid(ctx context.Context, orderID string) error
 			return err
 		}
 		return c.deviceTopupRepository.MarkFailed(ctx, id)
+	case strings.HasPrefix(orderID, "addon-"):
+		// No pending row to fail — the reminder that generated this pay link didn't create one
+		// (see handleDeviceAddonRenewalPaid). The addon's existing active/grace state is untouched;
+		// Phase 4's grace-then-trim cron handles the consequence of a reminder that never converts.
+		slog.Info("rollypay webhook: device addon renewal not paid, no action needed", "order_id", orderID)
+		return nil
 	default:
 		slog.Warn("rollypay webhook: unrecognized order_id prefix on non-paid event", "order_id", orderID)
 		return nil

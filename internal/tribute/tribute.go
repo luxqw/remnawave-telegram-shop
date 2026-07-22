@@ -204,7 +204,7 @@ func (c *Client) newSubscriptionHandler(ctx context.Context, wh SubscriptionWebh
 	if customer == nil {
 		return fmt.Errorf("newSubscription: %w", payment.ErrCustomerNotFound)
 	}
-	_, purchaseId, err := c.paymentService.CreatePurchase(ctx, float64(wh.Payload.Amount)/100, months, customer, database.InvoiceTypeTribute)
+	_, purchaseId, _, err := c.paymentService.CreatePurchase(ctx, float64(wh.Payload.Amount)/100, months, customer, database.InvoiceTypeTribute)
 	if err != nil {
 		return err
 	}

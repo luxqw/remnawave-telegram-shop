@@ -69,6 +69,7 @@ func main() {
 	referralRepository := database.NewReferralRepository(pool)
 	topupRepository := database.NewTrafficTopupRepository(pool)
 	deviceTopupRepository := database.NewDeviceTopupRepository(pool)
+	deviceAddonRepository := database.NewDeviceAddonRepository(pool)
 	auditLogRepository := database.NewAdminAuditLogRepository(pool)
 	webhookInboxRepository := database.NewWebhookInboxRepository(pool)
 	activityRepository := database.NewActivityRepository(pool)
@@ -98,7 +99,7 @@ func main() {
 		panic(err)
 	}
 
-	paymentService := payment.NewPaymentService(tm, purchaseRepository, remnawaveClient, customerRepository, b, rollypayClient, referralRepository, cache, topupRepository)
+	paymentService := payment.NewPaymentService(tm, purchaseRepository, remnawaveClient, customerRepository, b, rollypayClient, referralRepository, cache, topupRepository, deviceAddonRepository)
 
 	subService := notification.NewSubscriptionService(customerRepository, purchaseRepository, paymentService, b, tm, notificationLogRepository)
 
@@ -134,12 +135,17 @@ func main() {
 	// (webhook route, retry cron, admin webapp) treats that as optional, same as tributeClient.
 	var rollypayWebhookClient *rollypay.WebhookClient
 	if config.IsRollyPayEnabled() {
-		rollypayWebhookClient = rollypay.NewWebhookClient(rollypayClient, paymentService, purchaseRepository, topupRepository, deviceTopupRepository, webhookInboxRepository, remnawaveClient, b, tm)
+		rollypayWebhookClient = rollypay.NewWebhookClient(rollypayClient, paymentService, purchaseRepository, customerRepository, topupRepository, deviceTopupRepository, deviceAddonRepository, webhookInboxRepository, remnawaveClient, b, tm)
+
+		deviceAddonRenewalSvc := notification.NewDeviceAddonRenewalService(deviceAddonRepository, rollypayClient, b, tm, notificationLogRepository)
+		deviceAddonRenewalCron := deviceAddonRenewalChecker(deviceAddonRenewalSvc)
+		deviceAddonRenewalCron.Start()
+		defer deviceAddonRenewalCron.Stop()
 	}
 
 	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, notificationLogRepository, remnawaveClient, syncService, b, tm)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, topupInputCache)
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, deviceAddonRepository, topupInputCache)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
@@ -343,6 +349,21 @@ func subscriptionChecker(subService *notification.SubscriptionService) *cron.Cro
 		err := subService.ProcessSubscriptionExpiration()
 		if err != nil {
 			slog.Error("Error sending subscription notifications", "error", err)
+		}
+	})
+
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func deviceAddonRenewalChecker(svc *notification.DeviceAddonRenewalService) *cron.Cron {
+	c := cron.New()
+
+	_, err := c.AddFunc("0 */4 * * *", func() {
+		if err := svc.ProcessRenewalReminders(); err != nil {
+			slog.Error("Error sending device addon renewal reminders", "error", err)
 		}
 	})
 

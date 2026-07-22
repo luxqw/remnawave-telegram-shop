@@ -22,6 +22,7 @@ type Handler struct {
 	remnawaveClient       *remnawave.Client
 	topupRepository       *database.TrafficTopupRepository
 	deviceTopupRepository *database.DeviceTopupRepository
+	deviceAddonRepository *database.DeviceAddonRepository
 	// topupAwaitingInput tracks telegram IDs currently expected to send a free-text GB amount for
 	// the custom top-up flow, mapping to the prompt message ID (for editing it in place). Reuses
 	// cache.Cache verbatim rather than a new type — same TTL-expiring-map shape already used for
@@ -41,6 +42,7 @@ func NewHandler(
 	remnawaveClient *remnawave.Client,
 	topupRepository *database.TrafficTopupRepository,
 	deviceTopupRepository *database.DeviceTopupRepository,
+	deviceAddonRepository *database.DeviceAddonRepository,
 	topupAwaitingInput *cache.Cache,
 ) *Handler {
 	return &Handler{
@@ -55,6 +57,7 @@ func NewHandler(
 		remnawaveClient:       remnawaveClient,
 		topupRepository:       topupRepository,
 		deviceTopupRepository: deviceTopupRepository,
+		deviceAddonRepository: deviceAddonRepository,
 		topupAwaitingInput:    topupAwaitingInput,
 	}
 }

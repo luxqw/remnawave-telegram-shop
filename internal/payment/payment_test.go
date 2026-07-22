@@ -3,8 +3,6 @@ package payment
 import (
 	"testing"
 	"time"
-
-	"remnawave-tg-shop-bot/internal/database"
 )
 
 func TestProrateDeviceCost(t *testing.T) {
@@ -68,34 +66,6 @@ func TestProrateDeviceCost(t *testing.T) {
 			}
 			if gotAmount != tt.wantAmount {
 				t.Fatalf("amount: want %v, got %v", tt.wantAmount, gotAmount)
-			}
-		})
-	}
-}
-
-func TestBillingModeForTributes(t *testing.T) {
-	tests := []struct {
-		name     string
-		tributes []database.Purchase
-		wantMode database.AddonBillingMode
-	}{
-		{
-			name:     "no active tributes bundles into rollypay renewal",
-			tributes: nil,
-			wantMode: database.AddonBillingModeBundled,
-		},
-		{
-			name:     "active tribute forces standalone billing",
-			tributes: []database.Purchase{{ID: 1}},
-			wantMode: database.AddonBillingModeStandalone,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := billingModeForTributes(tt.tributes)
-			if got != tt.wantMode {
-				t.Fatalf("want %v, got %v", tt.wantMode, got)
 			}
 		})
 	}

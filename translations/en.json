@@ -96,7 +96,10 @@
   "tribute_topup_success": "✅ +%d GB credited.\nCurrent limit: %d GB.",
   "device_topup_success": "✅ +1 device slot added.\nCurrent device limit: %d.",
   "device_buy_button": "➕ Buy device slot — %d ₽",
-  "device_disclaimer": "➕ <b>+1 device slot</b> — %d ₽\n\nStays active as long as the subscription is active.",
+  "device_disclaimer_bundled": "➕ <b>+1 device slot</b> — %d ₽ (prorated for the days left in this cycle)\n\nFrom now on it's included in your subscription renewal price.",
+  "device_disclaimer_standalone": "➕ <b>+1 device slot</b> — %d ₽ (prorated for the days left in this cycle)\n\nFrom now on it renews separately, every ~30 days.",
+  "device_addon_renewal_reminder": "🔁 <b>Device slot renewal</b>\n\nYou have %d extra device slot(s). Renewal cost — %d ₽.\n\nPay to keep your current device limit.",
+  "device_addon_renewed": "✅ Device slots (%d) renewed for another cycle.",
   "device_no_subscription": "❌ Buying extra device slots requires an active subscription.\n\nGet a subscription — the \"Buy\" button.",
   "device_trial_only": "⚠️ Buying extra device slots is only available on a paid subscription.",
   "admin_message_prefix": "✉️ Message from the administrator:\n\n%s"

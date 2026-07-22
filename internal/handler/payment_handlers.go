@@ -136,15 +136,18 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	}
 
 	ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, update.CallbackQuery.From.Username)
-	paymentURL, purchaseId, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
+	paymentURL, purchaseId, chargedAmount, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
 	if err != nil {
 		slog.Error("Error creating payment", "error", err)
 		h.showPaymentError(ctx, b, callback.Chat.ID, callback.ID, langCode)
 		return
 	}
 
+	// chargedAmount may exceed price: createRollyPayInvoice folds an active bundled device addon's
+	// renewal cost into the subscription invoice (decision 2), and the summary must show what's
+	// actually being charged, not the bare subscription price.
 	monthLabel := h.translation.GetText(langCode, fmt.Sprintf("month_%d", month))
-	summaryText := fmt.Sprintf(h.translation.GetText(langCode, "payment_summary"), monthLabel, price)
+	summaryText := fmt.Sprintf(h.translation.GetText(langCode, "payment_summary"), monthLabel, int(chargedAmount))
 
 	message, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
