@@ -121,20 +121,7 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 			return
 		}
 		if pending != nil {
-			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-				ChatID:    callback.Chat.ID,
-				MessageID: callback.ID,
-				ParseMode: models.ParseModeHTML,
-				Text:      h.translation.GetText(langCode, "topup_pending_warning"),
-				ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-					// Cancel immediately lifts the pending block (FindRecentPendingByCustomerID);
-					// Back just navigates away and leaves it in place — RollyPay has no cancel/void
-					// API to call either way, so this button copy is the only distinction that
-					// exists (decision 7).
-					{h.translation.GetButton(langCode, "topup_cancel_button").InlineCallback(fmt.Sprintf("%s?id=%d", CallbackPaymentCancel, pending.ID))},
-					{h.translation.GetButton(langCode, "back_keeps_pending_button").InlineCallback(CallbackStart)},
-				}},
-			})
+			h.showPendingPurchaseWarning(ctx, b, callback.Chat.ID, callback.ID, langCode, fmt.Sprintf("%s?id=%d", CallbackPaymentCancel, pending.ID))
 			return
 		}
 	}
@@ -154,27 +141,50 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	summaryText := fmt.Sprintf(h.translation.GetText(langCode, "payment_summary"), monthLabel, int(chargedAmount))
 
 	message, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    callback.Chat.ID,
-		MessageID: callback.ID,
-		ParseMode: models.ParseModeHTML,
-		Text:      summaryText,
-		ReplyMarkup: models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{
-					h.translation.GetButton(langCode, "pay_button").InlineURL(paymentURL),
-					// This purchase is now pending (30-min block) — Back only navigates, it does not
-					// cancel it. To actually cancel, the customer has to come back here and use the
-					// pending-purchase screen's Cancel button above.
-					h.translation.GetButton(langCode, "back_keeps_pending_button").InlineCallback(CallbackBuy),
-				},
-			},
-		},
+		ChatID:      callback.Chat.ID,
+		MessageID:   callback.ID,
+		ParseMode:   models.ParseModeHTML,
+		Text:        summaryText,
+		ReplyMarkup: h.payOrCancelKeyboard(langCode, paymentURL, fmt.Sprintf("%s?id=%d", CallbackPaymentCancel, purchaseId)),
 	})
 	if err != nil {
 		slog.Error("Error updating payment message", "error", err)
 		return
 	}
 	h.cache.Set(purchaseId, message.ID)
+}
+
+// payOrCancelKeyboard is the button row shown right after a RollyPay invoice is created (Screen A
+// across the subscription/topup/device flows): Pay, plus a single Cancel. There used to be a
+// "Back (doesn't cancel)" button here instead of Cancel, but none of the rollypay webhook dispatch
+// paths gate on cancelled/expired status — a completed payment is honored regardless of local
+// state — so a non-cancelling alternative never protected anything, it only added a confusing
+// second button.
+func (h Handler) payOrCancelKeyboard(langCode, payURL, cancelCallbackData string) models.InlineKeyboardMarkup {
+	return models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+		{h.translation.GetButton(langCode, "pay_button").InlineURL(payURL)},
+		{h.translation.GetButton(langCode, "topup_cancel_button").InlineCallback(cancelCallbackData)},
+	}}
+}
+
+// showPendingPurchaseWarning renders the "payment not finished" blocker screen (Screen B) shown
+// when a customer returns to a purchase flow with one already in flight. Shared by the
+// subscription/topup/device-purchase flows, which used to each copy-paste this screen with
+// slightly different (and in two cases, stale) button sets — see payOrCancelKeyboard's doc comment
+// for why Cancel is the only action offered.
+func (h Handler) showPendingPurchaseWarning(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode, cancelCallbackData string) {
+	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+		ParseMode: models.ParseModeHTML,
+		Text:      h.translation.GetText(langCode, "topup_pending_warning"),
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+			{h.translation.GetButton(langCode, "topup_cancel_button").InlineCallback(cancelCallbackData)},
+		}},
+	})
+	if err != nil {
+		slog.Error("show pending purchase warning", "error", err)
+	}
 }
 
 // showPaymentError gives visible feedback on a failed purchase attempt instead of leaving the

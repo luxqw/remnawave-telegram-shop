@@ -88,10 +88,15 @@ func (r *NotificationLogRepository) HasSentSince(ctx context.Context, customerTe
 // empty strings mean "no filter on this column").
 type NotificationLogFilter struct {
 	CustomerTelegramID *int64
-	NotificationType   string
-	Status             string
-	From               *time.Time
-	To                 *time.Time
+	// ExcludeCustomerTelegramID drops one telegram ID's rows — used to hide the admin's own
+	// test-mode purchases (RollyPay's Test flag only ever applies to the admin's account) from
+	// the admin-facing notification log without any new is_test tracking on the customer/
+	// subscription itself.
+	ExcludeCustomerTelegramID *int64
+	NotificationType          string
+	Status                    string
+	From                      *time.Time
+	To                        *time.Time
 }
 
 // FindAllPaginated powers the admin webapp notification log screen with filters. Uses raw SQL
@@ -105,6 +110,9 @@ func (r *NotificationLogRepository) FindAllPaginated(ctx context.Context, filter
 	}
 	if filter.CustomerTelegramID != nil {
 		add("customer_telegram_id = $%d", *filter.CustomerTelegramID)
+	}
+	if filter.ExcludeCustomerTelegramID != nil {
+		add("customer_telegram_id != $%d", *filter.ExcludeCustomerTelegramID)
 	}
 	if filter.NotificationType != "" {
 		add("notification_type = $%d", filter.NotificationType)
@@ -178,9 +186,10 @@ func (r *NotificationLogRepository) FindByID(ctx context.Context, id int64) (*No
 // created since the given timestamp, powering the admin delivery-rate stat cards. Uses a
 // parameterized timestamp bound rather than a string-built interval, so there's no interval
 // syntax to validate/escape.
-func (r *NotificationLogRepository) CountByStatus(ctx context.Context, since time.Time) (map[string]int64, error) {
-	query := `SELECT status, COUNT(*) FROM notification_log WHERE created_at >= $1 GROUP BY status`
-	rows, err := r.pool.Query(ctx, query, since)
+// excludeTelegramID drops one telegram ID from the counts — see NotificationLogFilter.ExcludeCustomerTelegramID.
+func (r *NotificationLogRepository) CountByStatus(ctx context.Context, since time.Time, excludeTelegramID int64) (map[string]int64, error) {
+	query := `SELECT status, COUNT(*) FROM notification_log WHERE created_at >= $1 AND customer_telegram_id != $2 GROUP BY status`
+	rows, err := r.pool.Query(ctx, query, since, excludeTelegramID)
 	if err != nil {
 		return nil, fmt.Errorf("count notification log by status: %w", err)
 	}

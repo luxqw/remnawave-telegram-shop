@@ -20,9 +20,12 @@ export function ActivityFeed() {
         <div class="stack" style={{ gap: 10 }}>
           {events.map((e, i) => {
             const meta = TYPE_META[e.type];
+            const Icon = meta.icon;
             return (
               <div class="data-card-row" key={i}>
-                <span class="data-card-label">{meta.icon} {new Date(e.timestamp).toLocaleString("ru-RU")}</span>
+                <span class="data-card-label" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <Icon size={14} /> {new Date(e.timestamp).toLocaleString("ru-RU")}
+                </span>
                 <span class="data-card-value">{meta.label(e)}</span>
               </div>
             );

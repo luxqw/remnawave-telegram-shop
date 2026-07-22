@@ -25,6 +25,7 @@
   --accent-mono-ink: #08080a;
   --accent-mono-hover: #e5e5e7;
   --accent-danger: #ff453a;
+  --accent-danger-hover-bg: rgba(255, 69, 58, 0.1);
 
   /* Success/danger badge colors, split out from components.css so light mode (below) can
      supply readable variants instead of leaving pastel colors baked in at low contrast. */
@@ -37,6 +38,10 @@
      cursor-tracked spotlight pseudo-element (see components.css). */
   --glass-highlight: rgba(255, 255, 255, 0.5);
   --glass-shadow: rgba(0, 0, 0, 0.6);
+
+  /* .shimmer sweep highlight — was hardcoded white in components.css, invisible/wrong over the
+     light theme's dark-tinted --surface-glass. Flips per theme like every other surface color. */
+  --shimmer-highlight: rgba(255, 255, 255, 0.08);
 
   /* Ambient background orbs/beams + grain overlay (see base.css .atmosphere/.beam). */
   --orb-a: rgba(255, 255, 255, 0.09);
@@ -108,6 +113,7 @@
 
   --glass-highlight: rgba(255, 255, 255, 0.75);
   --glass-shadow: rgba(10, 10, 10, 0.16);
+  --shimmer-highlight: rgba(10, 10, 10, 0.06);
 
   --orb-a: rgba(10, 10, 10, 0.06);
   --orb-b: rgba(10, 10, 10, 0.04);

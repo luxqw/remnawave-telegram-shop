@@ -46,6 +46,7 @@ export interface Purchase {
   expireAt: string | null;
   telegramId?: number;
   username?: string;
+  isTest: boolean;
 }
 
 export interface AuditLogEntry {

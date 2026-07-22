@@ -48,6 +48,7 @@ type Purchase struct {
 	YookasaID         *uuid.UUID     `db:"yookasa_id"`
 	ProviderPaymentID *string        `db:"provider_payment_id"`
 	ProviderPayURL    *string        `db:"provider_pay_url"`
+	IsTest            bool           `db:"is_test"`
 }
 
 type PurchaseRepository struct {
@@ -62,8 +63,8 @@ func NewPurchaseRepository(pool *pgxpool.Pool) *PurchaseRepository {
 
 func (cr *PurchaseRepository) Create(ctx context.Context, purchase *Purchase) (int64, error) {
 	buildInsert := sq.Insert("purchase").
-		Columns("amount", "customer_id", "month", "currency", "expire_at", "status", "invoice_type", "crypto_invoice_id", "crypto_invoice_url", "yookasa_url", "yookasa_id", "provider_payment_id", "provider_pay_url").
-		Values(purchase.Amount, purchase.CustomerID, purchase.Month, purchase.Currency, purchase.ExpireAt, purchase.Status, purchase.InvoiceType, purchase.CryptoInvoiceID, purchase.CryptoInvoiceLink, purchase.YookasaURL, purchase.YookasaID, purchase.ProviderPaymentID, purchase.ProviderPayURL).
+		Columns("amount", "customer_id", "month", "currency", "expire_at", "status", "invoice_type", "crypto_invoice_id", "crypto_invoice_url", "yookasa_url", "yookasa_id", "provider_payment_id", "provider_pay_url", "is_test").
+		Values(purchase.Amount, purchase.CustomerID, purchase.Month, purchase.Currency, purchase.ExpireAt, purchase.Status, purchase.InvoiceType, purchase.CryptoInvoiceID, purchase.CryptoInvoiceLink, purchase.YookasaURL, purchase.YookasaID, purchase.ProviderPaymentID, purchase.ProviderPayURL, purchase.IsTest).
 		Suffix("RETURNING id").
 		PlaceholderFormat(sq.Dollar)
 
@@ -121,6 +122,7 @@ func (cr *PurchaseRepository) FindByInvoiceTypeAndStatus(ctx context.Context, in
 			&purchase.YookasaID,
 			&purchase.ProviderPaymentID,
 			&purchase.ProviderPayURL,
+			&purchase.IsTest,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan purchase: %w", err)
@@ -164,6 +166,7 @@ func (cr *PurchaseRepository) FindById(ctx context.Context, id int64) (*Purchase
 		&purchase.YookasaID,
 		&purchase.ProviderPaymentID,
 		&purchase.ProviderPayURL,
+		&purchase.IsTest,
 	)
 
 	if err != nil {
@@ -258,7 +261,7 @@ func (pr *PurchaseRepository) FindLatestActiveTributesByCustomerIDs(
 		if err := rows.Scan(
 			&p.ID, &p.Amount, &p.CustomerID, &p.CreatedAt, &p.Month,
 			&p.PaidAt, &p.Currency, &p.ExpireAt, &p.Status, &p.InvoiceType,
-			&p.CryptoInvoiceID, &p.CryptoInvoiceLink, &p.YookasaURL, &p.YookasaID, &p.ProviderPaymentID, &p.ProviderPayURL,
+			&p.CryptoInvoiceID, &p.CryptoInvoiceLink, &p.YookasaURL, &p.YookasaID, &p.ProviderPaymentID, &p.ProviderPayURL, &p.IsTest,
 		); err != nil {
 			return nil, fmt.Errorf("scan purchase: %w", err)
 		}
@@ -297,7 +300,7 @@ func (pr *PurchaseRepository) FindByCustomerIDAndInvoiceTypeLast(
 	err = pr.pool.QueryRow(ctx, sql, args...).Scan(
 		&p.ID, &p.Amount, &p.CustomerID, &p.CreatedAt, &p.Month,
 		&p.PaidAt, &p.Currency, &p.ExpireAt, &p.Status, &p.InvoiceType,
-		&p.CryptoInvoiceID, &p.CryptoInvoiceLink, &p.YookasaURL, &p.YookasaID, &p.ProviderPaymentID, &p.ProviderPayURL,
+		&p.CryptoInvoiceID, &p.CryptoInvoiceLink, &p.YookasaURL, &p.YookasaID, &p.ProviderPaymentID, &p.ProviderPayURL, &p.IsTest,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -345,7 +348,7 @@ func scanPurchaseRow(row interface{ Scan(...interface{}) error }, p *Purchase) e
 	return row.Scan(
 		&p.ID, &p.Amount, &p.CustomerID, &p.CreatedAt, &p.Month,
 		&p.PaidAt, &p.Currency, &p.ExpireAt, &p.Status, &p.InvoiceType,
-		&p.CryptoInvoiceID, &p.CryptoInvoiceLink, &p.YookasaURL, &p.YookasaID, &p.ProviderPaymentID, &p.ProviderPayURL,
+		&p.CryptoInvoiceID, &p.CryptoInvoiceLink, &p.YookasaURL, &p.YookasaID, &p.ProviderPaymentID, &p.ProviderPayURL, &p.IsTest,
 	)
 }
 
@@ -422,7 +425,7 @@ type RevenueDay struct {
 func (pr *PurchaseRepository) RevenueByDay(ctx context.Context, days int) ([]RevenueDay, error) {
 	query := `SELECT date_trunc('day', paid_at) AS day, COALESCE(SUM(amount), 0), COUNT(*)
 		FROM purchase
-		WHERE status = 'paid' AND paid_at IS NOT NULL AND paid_at >= NOW() - make_interval(days => $1)
+		WHERE status = 'paid' AND paid_at IS NOT NULL AND NOT is_test AND paid_at >= NOW() - make_interval(days => $1)
 		GROUP BY day
 		ORDER BY day ASC`
 	rows, err := pr.pool.Query(ctx, query, days)
@@ -448,7 +451,7 @@ func (pr *PurchaseRepository) RevenueByDay(ctx context.Context, days int) ([]Rev
 // scalar query (as opposed to RevenueByDay's per-day series), used by the admin header metrics
 // strip's trailing-30-day revenue approximation.
 func (pr *PurchaseRepository) RevenueSince(ctx context.Context, since time.Time) (float64, error) {
-	query := `SELECT COALESCE(SUM(amount), 0) FROM purchase WHERE status = 'paid' AND paid_at IS NOT NULL AND paid_at >= $1`
+	query := `SELECT COALESCE(SUM(amount), 0) FROM purchase WHERE status = 'paid' AND paid_at IS NOT NULL AND NOT is_test AND paid_at >= $1`
 	var total float64
 	if err := pr.pool.QueryRow(ctx, query, since).Scan(&total); err != nil {
 		return 0, fmt.Errorf("query revenue since: %w", err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -53,15 +54,7 @@ func (h Handler) DeviceBuyCallbackHandler(ctx context.Context, b *bot.Bot, updat
 		return
 	}
 	if pending != nil {
-		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-			ChatID:    msg.Chat.ID,
-			MessageID: msg.ID,
-			ParseMode: models.ParseModeHTML,
-			Text:      h.translation.GetText(langCode, "topup_pending_warning"),
-			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-				{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackDevices)},
-			}},
-		})
+		h.showPendingPurchaseWarning(ctx, b, msg.Chat.ID, msg.ID, langCode, fmt.Sprintf("%s?id=%d", CallbackDeviceCancel, pending.ID))
 		return
 	}
 
@@ -141,15 +134,27 @@ func (h Handler) DeviceBuyCallbackHandler(ctx context.Context, b *bot.Bot, updat
 	}
 	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, disclaimerKey), int(math.Round(amount)))
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    msg.Chat.ID,
-		MessageID: msg.ID,
-		ParseMode: models.ParseModeHTML,
-		Text:      disclaimer,
-		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-			{{Text: h.translation.GetButton(langCode, "pay_button").Text, URL: paymentResp.PayURL}},
-			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackDevices)},
-		}},
+		ChatID:      msg.Chat.ID,
+		MessageID:   msg.ID,
+		ParseMode:   models.ParseModeHTML,
+		Text:        disclaimer,
+		ReplyMarkup: h.payOrCancelKeyboard(langCode, paymentResp.PayURL, fmt.Sprintf("%s?id=%d", CallbackDeviceCancel, topupID)),
 	})
+}
+
+// DeviceCancelCallbackHandler cancels a stuck pending device-slot purchase, mirroring
+// TopupCancelCallbackHandler/PaymentCancelCallbackHandler — lets the customer immediately retry
+// instead of waiting out the 30-minute pending window in FindRecentPendingByTelegramID.
+func (h Handler) DeviceCancelCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
+	cbData := parseCallbackData(update.CallbackQuery.Data)
+	if idStr, ok := cbData["id"]; ok {
+		if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+			if err := h.deviceTopupRepository.ExpireByID(ctx, id); err != nil {
+				slog.Error("device cancel: expire record", "id", id, "error", err)
+			}
+		}
+	}
+	h.DevicesCallbackHandler(ctx, b, update)
 }
 
 func (h Handler) showDeviceBuyError(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string) {
