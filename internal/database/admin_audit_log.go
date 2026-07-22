@@ -2,10 +2,12 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
@@ -28,6 +30,20 @@ type AdminAuditLogRepository struct {
 
 func NewAdminAuditLogRepository(pool *pgxpool.Pool) *AdminAuditLogRepository {
 	return &AdminAuditLogRepository{pool: pool}
+}
+
+// HealthCheck verifies the admin_audit_log table is actually reachable. Every mutation's audit
+// write (see adminops.Service.audit/auditText) only logs its own failure to slog and otherwise
+// swallows it — an audit log that can silently stop recording is worthless as a trust instrument.
+// Call this once at startup so a broken table (missing migration, dropped grant, wrong DB) fails
+// the boot loudly instead of going unnoticed until someone happens to check server logs.
+func (r *AdminAuditLogRepository) HealthCheck(ctx context.Context) error {
+	var discard int
+	err := r.pool.QueryRow(ctx, "SELECT 1 FROM admin_audit_log LIMIT 1").Scan(&discard)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("admin_audit_log health check: %w", err)
+	}
+	return nil
 }
 
 func (r *AdminAuditLogRepository) Create(ctx context.Context, log *AdminAuditLog) (int64, error) {

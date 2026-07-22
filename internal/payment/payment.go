@@ -367,6 +367,7 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 		Currency:    "RUB",
 		CustomerID:  customer.ID,
 		Month:       months,
+		IsTest:      config.RollyPayTestMode() && customer.TelegramID == config.GetAdminTelegramId(),
 	})
 	if err != nil {
 		slog.Error("Error creating purchase", "error", err)

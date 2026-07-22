@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
 )
 
@@ -42,9 +43,11 @@ func toNotificationDTO(l database.NotificationLog) notificationDTO {
 // parseActivityFilter's shape (type/status/customerId/from/to).
 func parseNotificationFilter(r *http.Request) database.NotificationLogFilter {
 	q := r.URL.Query()
+	adminID := config.GetAdminTelegramId()
 	filter := database.NotificationLogFilter{
-		NotificationType: q.Get("type"),
-		Status:           q.Get("status"),
+		NotificationType:          q.Get("type"),
+		Status:                    q.Get("status"),
+		ExcludeCustomerTelegramID: &adminID,
 	}
 	if v := q.Get("customerId"); v != "" {
 		if id, ok := parseInt64Query(v); ok {
@@ -107,7 +110,7 @@ func (h *Handler) handleNotificationStats(w http.ResponseWriter, r *http.Request
 	days := daysParam(r, 7)
 	since := time.Now().AddDate(0, 0, -days)
 
-	counts, err := h.notificationLogRepository.CountByStatus(r.Context(), since)
+	counts, err := h.notificationLogRepository.CountByStatus(r.Context(), since, config.GetAdminTelegramId())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
