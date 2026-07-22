@@ -2,13 +2,9 @@
   "use strict";
 
   // Fill in real MTProto proxy links (t.me/proxy?server=...&port=...&secret=...) as they become
-  // available. Any entry with an empty link is skipped; if every entry is empty, the "coming
-  // soon" state renders instead. Add or remove entries freely - the list isn't fixed at 3.
-  const PROXIES = [
-    { label: "Прокси 1", link: "" },
-    { label: "Прокси 2", link: "" },
-    { label: "Прокси 3", link: "" },
-  ];
+  // available. Empty strings are skipped; if every entry is empty, the "coming soon" state
+  // renders instead. No labels — the visible link text is what tells the 3 cards apart.
+  const PROXIES = ["", "", ""];
 
   const root = document.documentElement;
   const THEME_KEY = "vexel-policy-theme";
@@ -32,69 +28,57 @@
     localStorage.setItem(THEME_KEY, next);
   });
 
-  const activeProxies = PROXIES.filter((p) => p.link);
+  const connectIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>';
+  const copyIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+  const checkIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  const activeProxies = PROXIES.filter((link) => link);
   if (activeProxies.length > 0) {
     document.getElementById("proxyPending").style.display = "none";
-    const list = document.getElementById("proxyList");
+    const grid = document.getElementById("proxyGrid");
 
-    const connectIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>';
-    const copyIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+    activeProxies.forEach((link) => {
+      const tile = document.createElement("div");
+      tile.className = "proxy-tile";
 
-    activeProxies.forEach((proxy, i) => {
-      const row = document.createElement("div");
-      row.className = "proxy-row";
+      const linkBtn = document.createElement("button");
+      linkBtn.className = "proxy-tile-link";
+      linkBtn.type = "button";
+      linkBtn.setAttribute("aria-label", "Скопировать ссылку");
+      linkBtn.title = "Скопировать ссылку";
 
-      const badge = document.createElement("span");
-      badge.className = "n";
-      badge.textContent = String(i + 1).padStart(2, "0");
+      const linkIcon = document.createElement("span");
+      linkIcon.setAttribute("aria-hidden", "true");
+      linkIcon.innerHTML = copyIcon;
 
-      const bodyEl = document.createElement("div");
-      bodyEl.className = "proxy-row-body";
+      const linkText = document.createElement("span");
+      linkText.textContent = link;
 
-      const head = document.createElement("div");
-      head.className = "proxy-row-head";
-
-      const label = document.createElement("div");
-      label.className = "proxy-row-label";
-      label.textContent = proxy.label;
-
-      const actions = document.createElement("div");
-      actions.className = "proxy-row-actions";
+      linkBtn.append(linkIcon, linkText);
+      linkBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(link);
+          linkIcon.innerHTML = checkIcon;
+          linkBtn.classList.add("copied");
+          setTimeout(() => {
+            linkIcon.innerHTML = copyIcon;
+            linkBtn.classList.remove("copied");
+          }, 1500);
+        } catch {
+          // Clipboard API unavailable (older browser/no permission) — the "Подключить" link
+          // still works, and the URL text is already selectable by hand as a fallback.
+        }
+      });
 
       const connectLink = document.createElement("a");
       connectLink.className = "pill-link primary";
-      connectLink.href = proxy.link;
+      connectLink.href = link;
       connectLink.target = "_blank";
       connectLink.rel = "noopener";
       connectLink.innerHTML = connectIcon + "<span>Подключить</span>";
 
-      const copyBtn = document.createElement("button");
-      copyBtn.className = "pill-link";
-      copyBtn.type = "button";
-      copyBtn.innerHTML = copyIcon + "<span>Скопировать</span>";
-      copyBtn.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(proxy.link);
-          const label = copyBtn.querySelector("span");
-          const original = label.textContent;
-          label.textContent = "Скопировано";
-          setTimeout(() => { label.textContent = original; }, 1500);
-        } catch {
-          // Clipboard API unavailable (older browser/no permission) — the link text below is
-          // already selectable by hand as a fallback.
-        }
-      });
-
-      actions.append(connectLink, copyBtn);
-      head.append(label, actions);
-
-      const linkText = document.createElement("div");
-      linkText.className = "proxy-row-link";
-      linkText.textContent = proxy.link;
-
-      bodyEl.append(head, linkText);
-      row.append(badge, bodyEl);
-      list.appendChild(row);
+      tile.append(linkBtn, connectLink);
+      grid.appendChild(tile);
     });
   }
 

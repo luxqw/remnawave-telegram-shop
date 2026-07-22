@@ -30,36 +30,46 @@
 
   <main class="proxy-main">
     <div class="proxy-stack">
-      <div class="sheet proxy-card">
-        <h1 class="proxy-title">Прокси для доступа к Telegram</h1>
-        <p class="proxy-intro">
-          Если у знакомого не открывается Telegram — перешлите ему эту страницу через SMS, VK или Max. Ссылка ниже подключает прокси за один тап.
-        </p>
 
-        <div class="proxy-steps">
-          <div class="step-row">
-            <span class="n">1</span>
-            <p>Скопируйте ссылку ниже</p>
-          </div>
-          <div class="step-row">
-            <span class="n">2</span>
-            <p>Отправьте её любым способом, кроме Telegram — SMS, VK, Max</p>
-          </div>
-          <div class="step-row">
-            <span class="n">3</span>
-            <p>Откройте ссылку на устройстве с Telegram — прокси подключится автоматически</p>
-          </div>
+      <div class="sheet proxy-intro-card">
+        <div class="proxy-hero">
+          <h1 class="proxy-title">Прокси для доступа к Telegram</h1>
+          <p class="proxy-intro">
+            Если у знакомого не открывается Telegram — перешлите ему эту страницу через SMS, VK или Max. Любая ссылка ниже подключает прокси за один тап.
+          </p>
         </div>
+
+        <ol class="proxy-steps">
+          <li class="step">
+            <span class="step-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+            </span>
+            <p>Скопируйте любую ссылку ниже</p>
+          </li>
+          <li class="step">
+            <span class="step-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-8-8 18-2.5-7.5L3 11Z"/></svg>
+            </span>
+            <p>Отправьте её любым способом, кроме Telegram — SMS, VK, Max</p>
+          </li>
+          <li class="step">
+            <span class="step-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+            </span>
+            <p>Откройте ссылку на устройстве с Telegram — прокси подключится сам</p>
+          </li>
+        </ol>
       </div>
 
-      <div class="sheet proxy-list-card">
-        <div class="proxy-list-eyebrow">Доступные сервера</div>
-        <div id="proxyList"></div>
+      <div class="sheet proxy-grid-card">
+        <div class="proxy-list-eyebrow">Доступные прокси</div>
+        <div id="proxyGrid" class="proxy-grid"></div>
 
         <div id="proxyPending" class="proxy-pending">
           <p>Ссылки появятся здесь в ближайшее время. Актуальную ссылку также можно узнать в поддержке.</p>
         </div>
       </div>
+
     </div>
   </main>
 

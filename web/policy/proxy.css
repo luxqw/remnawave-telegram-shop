@@ -3,30 +3,33 @@
    `style-src 'self'` CSP (no 'unsafe-inline'), so every rule has to live here. */
 
 .proxy-main {
-  min-height: calc(100dvh - 300px);
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
+  padding-top: clamp(8px, 4vh, 40px);
 }
 
 .proxy-stack {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 620px;
+  max-width: 760px;
   margin: 0 auto;
   width: 100%;
 }
 
-.proxy-card {
-  padding: 40px clamp(24px, 5vw, 48px);
+.proxy-intro-card {
+  padding: 8px clamp(24px, 5vw, 48px) 4px;
+}
+
+.proxy-hero {
+  padding: 28px 0 22px;
+  border-bottom: 1px solid var(--hair);
 }
 
 .proxy-title {
   font-family: var(--display);
-  font-size: clamp(22px, 5vw, 30px);
-  margin: 0 0 12px;
+  font-size: clamp(24px, 5vw, 32px);
+  font-weight: 650;
   letter-spacing: -0.01em;
+  margin: 0 0 12px;
 }
 
 .proxy-intro {
@@ -34,47 +37,48 @@
   line-height: 1.6;
   margin: 0;
   font-size: 15px;
-  max-width: 46ch;
+  max-width: 50ch;
 }
 
 .proxy-steps {
+  list-style: none;
+  margin: 0;
+  padding: 22px 0 26px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 24px;
+  gap: 18px;
 }
 
-.step-row {
+.step {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
 }
 
-.step-row .n {
+.step-icon {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
   background: var(--glass-fill-hover);
   border: 1px solid var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--mono);
-  font-size: 11px;
   color: var(--ink-dim);
 }
+.step-icon svg { width: 16px; height: 16px; }
 
-.step-row p {
+.step p {
   margin: 0;
-  padding-top: 1px;
+  padding-top: 7px;
   color: var(--ink-dim);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 14.5px;
+  line-height: 1.55;
 }
 
-.proxy-list-card {
-  padding: 8px clamp(24px, 5vw, 48px) 12px;
+.proxy-grid-card {
+  padding: 8px clamp(24px, 5vw, 48px) 26px;
 }
 
 .proxy-list-eyebrow {
@@ -87,7 +91,7 @@
 }
 
 .proxy-pending {
-  padding: 12px 0 22px;
+  padding: 12px 0 8px;
 }
 .proxy-pending p {
   color: var(--ink-faint);
@@ -95,79 +99,69 @@
   margin: 0;
 }
 
-.proxy-row {
-  display: flex;
+.proxy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  align-items: flex-start;
-  padding: 18px 0;
-  border-bottom: 1px solid var(--hair);
+  margin: 18px 0 6px;
 }
-.proxy-row:last-child { border-bottom: 0; }
 
-.proxy-row .n {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  margin-top: 1px;
-  border-radius: 8px;
-  background: var(--glass-fill-hover);
+.proxy-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 18px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink-faint);
-}
-
-.proxy-row-body { flex: 1; min-width: 0; }
-
-.proxy-row-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-}
-
-.proxy-row-label {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.proxy-row-link {
-  color: var(--ink-faint);
-  font-size: 11.5px;
-  font-family: var(--mono);
-  word-break: break-all;
-  line-height: 1.5;
   background: var(--glass-fill);
+  transition: background-color 0.2s ease, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.proxy-tile:hover { background: var(--glass-fill-hover); transform: translateY(-2px); }
+
+.proxy-tile-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
   border: 1px solid var(--hair);
   border-radius: var(--radius-sm);
-  padding: 8px 10px;
+  background: var(--glass-fill);
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  text-align: left;
+  word-break: break-all;
+  padding: 10px 10px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
+.proxy-tile-link:hover { background: var(--glass-fill-hover); border-color: var(--hair-strong); color: var(--ink-dim); }
+.proxy-tile-link.copied { color: var(--ink); border-color: var(--hair-strong); }
 
-.proxy-row-actions {
-  display: flex;
-  gap: 8px;
+.proxy-tile-link svg {
   flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  color: var(--ink-faint);
 }
+.proxy-tile-link:hover svg,
+.proxy-tile-link.copied svg { color: var(--ink); }
 
-.proxy-row-actions .pill-link svg {
-  width: 14px;
-  height: 14px;
-  flex: none;
+.proxy-tile .pill-link.primary {
+  align-self: center;
+  padding: 10px 18px;
 }
+.proxy-tile .pill-link.primary svg { width: 14px; height: 14px; flex: none; }
 
 .proxy-contact {
   margin: 16px auto 0;
-  max-width: 620px;
+  max-width: 760px;
 }
 
-@media (max-width: 480px) {
-  .proxy-row-head { flex-direction: column; align-items: stretch; }
-  .proxy-row-actions { flex-direction: column; width: 100%; }
-  .proxy-row-actions .pill-link { justify-content: center; width: 100%; }
-  .step-row p { font-size: 13.5px; }
+@media (max-width: 640px) {
+  .proxy-grid { grid-template-columns: 1fr; }
+  .step p { font-size: 13.5px; }
 }
