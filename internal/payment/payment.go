@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
@@ -240,6 +241,45 @@ func (s PaymentService) CreatePurchase(ctx context.Context, amount float64, mont
 	default:
 		return "", 0, fmt.Errorf("unknown invoice type: %s", invoiceType)
 	}
+}
+
+// ProrateDeviceCost returns the RUB cost of adding deviceCount device slots for the days remaining
+// in the customer's current subscription cycle, using customer.ExpireAt as the cycle end — this
+// works for both RollyPay and Tribute customers, since Tribute also keeps ExpireAt in sync via its
+// webhook. Returns 0, 0 if the customer has no active cycle to prorate against.
+func ProrateDeviceCost(customer *database.Customer, deviceCount int) (amount float64, days int) {
+	return prorateDeviceCost(customer.ExpireAt, deviceCount, config.DeviceSlotDailyPriceRUB())
+}
+
+func prorateDeviceCost(expireAt *time.Time, deviceCount int, dailyPriceRUB float64) (amount float64, days int) {
+	if expireAt == nil {
+		return 0, 0
+	}
+	remainingHours := time.Until(*expireAt).Hours()
+	if remainingHours <= 0 {
+		return 0, 0
+	}
+	days = int(math.Ceil(remainingHours / 24))
+	amount = dailyPriceRUB * float64(deviceCount) * float64(days)
+	return amount, days
+}
+
+// DetermineDeviceAddonBillingMode decides whether a customer's device addon should be billed
+// standalone (Tribute-linked customers, whose charge amount cannot vary) or bundled into their
+// next RollyPay renewal invoice (everyone else).
+func (s PaymentService) DetermineDeviceAddonBillingMode(ctx context.Context, customer *database.Customer) (database.AddonBillingMode, error) {
+	tributes, err := s.purchaseRepository.FindLatestActiveTributesByCustomerIDs(ctx, []int64{customer.ID})
+	if err != nil {
+		return "", fmt.Errorf("determine device addon billing mode: %w", err)
+	}
+	return billingModeForTributes(*tributes), nil
+}
+
+func billingModeForTributes(tributes []database.Purchase) database.AddonBillingMode {
+	if len(tributes) > 0 {
+		return database.AddonBillingModeStandalone
+	}
+	return database.AddonBillingModeBundled
 }
 
 var ErrCustomerNotFound = errors.New("customer not found")

@@ -366,6 +366,12 @@ func DeviceSlotPriceRUB() int {
 	return conf.deviceSlotPriceRUB
 }
 
+// DeviceSlotDailyPriceRUB is the per-day rate used to prorate a mid-cycle device slot purchase
+// against the days remaining in the customer's current subscription cycle.
+func DeviceSlotDailyPriceRUB() float64 {
+	return float64(conf.deviceSlotPriceRUB) / float64(conf.daysInMonth)
+}
+
 const bytesInGigabyte = 1073741824
 
 func BytesInGigabyte() int { return bytesInGigabyte }
