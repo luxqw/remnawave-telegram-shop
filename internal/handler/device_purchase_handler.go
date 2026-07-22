@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -11,6 +12,7 @@ import (
 
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
+	"remnawave-tg-shop-bot/internal/payment"
 	"remnawave-tg-shop-bot/internal/rollypay"
 )
 
@@ -63,11 +65,52 @@ func (h Handler) DeviceBuyCallbackHandler(ctx context.Context, b *bot.Bot, updat
 		return
 	}
 
-	priceRUB := config.DeviceSlotPriceRUB()
+	// An existing addon's billing mode is reused rather than re-derived so a customer's mode can
+	// never flip mid-cycle if their Tribute status happens to change between purchases.
+	existingAddon, err := h.deviceAddonRepository.FindActiveByTelegramID(ctx, telegramID)
+	if err != nil {
+		slog.Error("device buy: find existing device addon", "error", err)
+		h.showDeviceBuyError(ctx, b, msg.Chat.ID, msg.ID, langCode)
+		return
+	}
+	hasActiveAddon := existingAddon != nil && existingAddon.Status != database.AddonStatusExpired
+
+	billingMode := database.AddonBillingModeBundled
+	if hasActiveAddon {
+		billingMode = existingAddon.BillingMode
+	} else {
+		billingMode, err = h.paymentService.DetermineDeviceAddonBillingMode(ctx, customer)
+		if err != nil {
+			slog.Error("device buy: determine billing mode", "error", err)
+			h.showDeviceBuyError(ctx, b, msg.Chat.ID, msg.ID, langCode)
+			return
+		}
+	}
+
+	// Bundled addons always ride the subscription's own cycle (decision 2), so every purchase —
+	// first slot or another one mid-cycle — prorates against customer.ExpireAt. Standalone addons
+	// have their own independent cycle (decision 3): a first purchase has no cycle yet to prorate
+	// against, so it's a full fresh-cycle charge; adding another slot mid that cycle prorates
+	// against the addon's own CycleExpiresAt, never the (often much longer, unrelated) subscription.
+	var amount float64
+	switch {
+	case billingMode == database.AddonBillingModeBundled:
+		amount, _ = payment.ProrateDeviceCost(customer, 1)
+	case hasActiveAddon:
+		amount, _ = payment.ProrateDeviceCostForCycle(existingAddon.CycleExpiresAt, 1)
+	default:
+		amount = float64(config.DeviceSlotPriceRUB())
+	}
+	if amount <= 0 {
+		slog.Error("device buy: prorated amount is zero", "telegram_id", telegramID)
+		h.showDeviceBuyError(ctx, b, msg.Chat.ID, msg.ID, langCode)
+		return
+	}
+
 	topupID, err := h.deviceTopupRepository.Create(ctx, &database.DeviceTopup{
 		TelegramID:  telegramID,
 		DeviceCount: 1,
-		PriceAmount: float64(priceRUB),
+		PriceAmount: amount,
 		Currency:    "RUB",
 		Status:      database.TopupStatusPending,
 	})
@@ -78,7 +121,7 @@ func (h Handler) DeviceBuyCallbackHandler(ctx context.Context, b *bot.Bot, updat
 	}
 
 	paymentResp, err := h.rollypayClient.CreatePayment(ctx, rollypay.CreatePaymentRequest{
-		Amount:      fmt.Sprintf("%d.00", priceRUB),
+		Amount:      fmt.Sprintf("%.2f", amount),
 		OrderID:     fmt.Sprintf("device-%d", topupID),
 		Description: "+1 device slot",
 		Test:        config.RollyPayTestMode() && telegramID == config.GetAdminTelegramId(),
@@ -92,7 +135,11 @@ func (h Handler) DeviceBuyCallbackHandler(ctx context.Context, b *bot.Bot, updat
 		return
 	}
 
-	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "device_disclaimer"), priceRUB)
+	disclaimerKey := "device_disclaimer_bundled"
+	if billingMode == database.AddonBillingModeStandalone {
+		disclaimerKey = "device_disclaimer_standalone"
+	}
+	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, disclaimerKey), int(math.Round(amount)))
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    msg.Chat.ID,
 		MessageID: msg.ID,

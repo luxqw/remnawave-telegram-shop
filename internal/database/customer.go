@@ -31,9 +31,16 @@ type Customer struct {
 	IsTrial              bool       `db:"is_trial"`
 	LastTrafficWarningAt *time.Time `db:"last_traffic_warning_at"`
 	Username             *string    `db:"username"`
+	// TributeAutorenewPaused/Streak back decision 9's safety cap on ProcessSubscriptionExpiration's
+	// optimistic Tribute renewal (SubscriptionService has no way to verify with Tribute's API that
+	// a subscription is genuinely still paid, only local DB state): Streak counts consecutive
+	// cron-driven extensions since the last genuine incoming Tribute webhook, reset to 0 there;
+	// Paused is a manual admin kill switch for a single customer once the cap trips.
+	TributeAutorenewPaused bool `db:"tribute_autorenew_paused"`
+	TributeAutorenewStreak int  `db:"tribute_autorenew_streak"`
 }
 
-var cols = []string{"id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial", "last_traffic_warning_at", "username"}
+var cols = []string{"id", "telegram_id", "expire_at", "created_at", "subscription_link", "language", "is_trial", "last_traffic_warning_at", "username", "tribute_autorenew_paused", "tribute_autorenew_streak"}
 
 func scanCustomer(row interface{ Scan(...interface{}) error }, customer *Customer) error {
 	return row.Scan(
@@ -46,6 +53,8 @@ func scanCustomer(row interface{ Scan(...interface{}) error }, customer *Custome
 		&customer.IsTrial,
 		&customer.LastTrafficWarningAt,
 		&customer.Username,
+		&customer.TributeAutorenewPaused,
+		&customer.TributeAutorenewStreak,
 	)
 }
 
@@ -117,7 +126,7 @@ func (cr *CustomerRepository) FindOrCreate(ctx context.Context, customer *Custom
 		INSERT INTO customer (telegram_id, expire_at, language, username)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = customer.telegram_id, username = COALESCE(EXCLUDED.username, customer.username)
-		RETURNING id, telegram_id, expire_at, created_at, subscription_link, language, is_trial, last_traffic_warning_at, username
+		RETURNING id, telegram_id, expire_at, created_at, subscription_link, language, is_trial, last_traffic_warning_at, username, tribute_autorenew_paused, tribute_autorenew_streak
 	`
 	var result Customer
 	if err := scanCustomer(cr.pool.QueryRow(ctx, query, customer.TelegramID, customer.ExpireAt, customer.Language, customer.Username), &result); err != nil {

@@ -47,6 +47,16 @@ type DeviceAddon struct {
 	UpdatedAt      time.Time
 }
 
+// DetermineAddonBillingMode decides bundled vs standalone from the customer's active Tribute
+// purchases: any active Tribute purchase forces standalone billing, since Tribute's charge amount
+// cannot vary to include a device addon cost (see AddonBillingMode doc above).
+func DetermineAddonBillingMode(activeTributes []Purchase) AddonBillingMode {
+	if len(activeTributes) > 0 {
+		return AddonBillingModeStandalone
+	}
+	return AddonBillingModeBundled
+}
+
 type DeviceAddonRepository struct {
 	pool *pgxpool.Pool
 }
@@ -99,6 +109,17 @@ func (r *DeviceAddonRepository) FindActiveByTelegramID(ctx context.Context, tele
 	a, err := scanDeviceAddon(r.pool.QueryRow(ctx, query, telegramID))
 	if err != nil {
 		return nil, fmt.Errorf("find device addon by telegram id: %w", err)
+	}
+	return a, nil
+}
+
+// FindByID looks up a single addon by its own id — used by the RollyPay webhook to resolve a
+// standalone renewal payment's order_id back to the addon it renews.
+func (r *DeviceAddonRepository) FindByID(ctx context.Context, id int64) (*DeviceAddon, error) {
+	query := `SELECT ` + deviceAddonSelectCols + ` FROM device_addons WHERE id = $1`
+	a, err := scanDeviceAddon(r.pool.QueryRow(ctx, query, id))
+	if err != nil {
+		return nil, fmt.Errorf("find device addon by id: %w", err)
 	}
 	return a, nil
 }

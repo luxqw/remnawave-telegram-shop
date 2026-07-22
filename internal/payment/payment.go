@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
@@ -20,15 +21,16 @@ import (
 )
 
 type PaymentService struct {
-	purchaseRepository *database.PurchaseRepository
-	remnawaveClient    *remnawave.Client
-	customerRepository *database.CustomerRepository
-	telegramBot        *bot.Bot
-	translation        *translation.Manager
-	rollypayClient     *rollypay.Client
-	referralRepository *database.ReferralRepository
-	cache              *cache.Cache
-	topupRepository    *database.TrafficTopupRepository
+	purchaseRepository    *database.PurchaseRepository
+	remnawaveClient       *remnawave.Client
+	customerRepository    *database.CustomerRepository
+	telegramBot           *bot.Bot
+	translation           *translation.Manager
+	rollypayClient        *rollypay.Client
+	referralRepository    *database.ReferralRepository
+	cache                 *cache.Cache
+	topupRepository       *database.TrafficTopupRepository
+	deviceAddonRepository *database.DeviceAddonRepository
 }
 
 func NewPaymentService(
@@ -41,17 +43,19 @@ func NewPaymentService(
 	referralRepository *database.ReferralRepository,
 	cache *cache.Cache,
 	topupRepository *database.TrafficTopupRepository,
+	deviceAddonRepository *database.DeviceAddonRepository,
 ) *PaymentService {
 	return &PaymentService{
-		purchaseRepository: purchaseRepository,
-		remnawaveClient:    remnawaveClient,
-		customerRepository: customerRepository,
-		telegramBot:        telegramBot,
-		translation:        translation,
-		rollypayClient:     rollypayClient,
-		referralRepository: referralRepository,
-		cache:              cache,
-		topupRepository:    topupRepository,
+		purchaseRepository:    purchaseRepository,
+		remnawaveClient:       remnawaveClient,
+		customerRepository:    customerRepository,
+		telegramBot:           telegramBot,
+		translation:           translation,
+		rollypayClient:        rollypayClient,
+		referralRepository:    referralRepository,
+		cache:                 cache,
+		topupRepository:       topupRepository,
+		deviceAddonRepository: deviceAddonRepository,
 	}
 }
 
@@ -154,6 +158,21 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		return err
 	}
 
+	// Bundled device addons ride the subscription's own cycle (decision 2) — once this renewal
+	// actually lands, push the addon's cycle_expires_at out to match so it doesn't fall out of
+	// sync with what was just paid for. Standalone (Tribute) addons are never bundled here, so
+	// they're untouched — their own renewal is handled by the addon-renewal webhook path instead.
+	if purchase.InvoiceType == database.InvoiceTypeRollyPay && s.deviceAddonRepository != nil {
+		addon, addonErr := s.deviceAddonRepository.FindActiveByTelegramID(ctx, customer.TelegramID)
+		if addonErr != nil {
+			slog.Error("purchase processed: find device addon for cycle sync failed", "telegram_id", customer.TelegramID, "error", addonErr)
+		} else if addon != nil && addon.Status != database.AddonStatusExpired && addon.BillingMode == database.AddonBillingModeBundled {
+			if syncErr := s.deviceAddonRepository.ExtendCycle(ctx, addon.ID, user.ExpireAt); syncErr != nil {
+				slog.Error("purchase processed: sync device addon cycle failed", "addon_id", addon.ID, "error", syncErr)
+			}
+		}
+	}
+
 	activationTextKey := "subscription_activated"
 	if !customer.IsTrial && customer.SubscriptionLink != nil {
 		activationTextKey = "subscription_renewed"
@@ -231,15 +250,55 @@ func (s PaymentService) createConnectKeyboard(customer *database.Customer) [][]m
 	return inlineCustomerKeyboard
 }
 
-func (s PaymentService) CreatePurchase(ctx context.Context, amount float64, months int, customer *database.Customer, invoiceType database.InvoiceType) (url string, purchaseId int64, err error) {
+func (s PaymentService) CreatePurchase(ctx context.Context, amount float64, months int, customer *database.Customer, invoiceType database.InvoiceType) (url string, purchaseId int64, chargedAmount float64, err error) {
 	switch invoiceType {
 	case database.InvoiceTypeTribute:
 		return s.createTributeInvoice(ctx, amount, months, customer)
 	case database.InvoiceTypeRollyPay:
 		return s.createRollyPayInvoice(ctx, amount, months, customer)
 	default:
-		return "", 0, fmt.Errorf("unknown invoice type: %s", invoiceType)
+		return "", 0, 0, fmt.Errorf("unknown invoice type: %s", invoiceType)
 	}
+}
+
+// ProrateDeviceCost returns the RUB cost of adding deviceCount device slots for the days remaining
+// in the customer's current subscription cycle, using customer.ExpireAt as the cycle end. Only
+// correct for bundled-billing customers, whose device addon rides the subscription's own cycle —
+// for standalone (Tribute-linked) customers the addon has its own independent cycle instead, so
+// mid-cycle additions must prorate against that via ProrateDeviceCostForCycle, not this.
+func ProrateDeviceCost(customer *database.Customer, deviceCount int) (amount float64, days int) {
+	return prorateDeviceCost(customer.ExpireAt, deviceCount, config.DeviceSlotDailyPriceRUB())
+}
+
+// ProrateDeviceCostForCycle prorates deviceCount slots against an arbitrary cycle end — used for a
+// standalone device addon's own CycleExpiresAt when a customer buys another slot mid-cycle,
+// instead of against their (unrelated, often much longer) subscription cycle.
+func ProrateDeviceCostForCycle(cycleExpiresAt time.Time, deviceCount int) (amount float64, days int) {
+	return prorateDeviceCost(&cycleExpiresAt, deviceCount, config.DeviceSlotDailyPriceRUB())
+}
+
+func prorateDeviceCost(expireAt *time.Time, deviceCount int, dailyPriceRUB float64) (amount float64, days int) {
+	if expireAt == nil {
+		return 0, 0
+	}
+	remainingHours := time.Until(*expireAt).Hours()
+	if remainingHours <= 0 {
+		return 0, 0
+	}
+	days = int(math.Ceil(remainingHours / 24))
+	amount = dailyPriceRUB * float64(deviceCount) * float64(days)
+	return amount, days
+}
+
+// DetermineDeviceAddonBillingMode decides whether a customer's device addon should be billed
+// standalone (Tribute-linked customers, whose charge amount cannot vary) or bundled into their
+// next RollyPay renewal invoice (everyone else).
+func (s PaymentService) DetermineDeviceAddonBillingMode(ctx context.Context, customer *database.Customer) (database.AddonBillingMode, error) {
+	tributes, err := s.purchaseRepository.FindLatestActiveTributesByCustomerIDs(ctx, []int64{customer.ID})
+	if err != nil {
+		return "", fmt.Errorf("determine device addon billing mode: %w", err)
+	}
+	return database.DetermineAddonBillingMode(*tributes), nil
 }
 
 var ErrCustomerNotFound = errors.New("customer not found")
@@ -288,7 +347,19 @@ func (s PaymentService) CancelTributePurchase(ctx context.Context, telegramId in
 	return nil
 }
 
-func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float64, months int, customer *database.Customer) (url string, purchaseId int64, err error) {
+func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float64, months int, customer *database.Customer) (url string, purchaseId int64, chargedAmount float64, err error) {
+	// Bundled device addons ride the subscription renewal invoice as a single payment (decision 2
+	// of the device-addon plan) rather than a separate charge — Tribute-linked customers never
+	// reach here with a bundled addon, since DetermineDeviceAddonBillingMode forces them standalone.
+	if s.deviceAddonRepository != nil {
+		addon, addonErr := s.deviceAddonRepository.FindActiveByTelegramID(ctx, customer.TelegramID)
+		if addonErr != nil {
+			slog.Error("createRollyPayInvoice: find device addon failed", "telegram_id", customer.TelegramID, "error", addonErr)
+		} else if addon != nil && addon.Status != database.AddonStatusExpired && addon.BillingMode == database.AddonBillingModeBundled {
+			amount += float64(addon.DeviceCount) * float64(config.DeviceSlotPriceRUB())
+		}
+	}
+
 	purchaseId, err = s.purchaseRepository.Create(ctx, &database.Purchase{
 		InvoiceType: database.InvoiceTypeRollyPay,
 		Status:      database.PurchaseStatusNew,
@@ -299,7 +370,7 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 	})
 	if err != nil {
 		slog.Error("Error creating purchase", "error", err)
-		return "", 0, err
+		return "", 0, 0, err
 	}
 
 	paymentResp, err := s.rollypayClient.CreatePayment(ctx, rollypay.CreatePaymentRequest{
@@ -313,7 +384,7 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 		if cancelErr := s.purchaseRepository.UpdateFields(ctx, purchaseId, map[string]interface{}{"status": database.PurchaseStatusCancel}); cancelErr != nil {
 			slog.Error("Error cancelling orphaned purchase", "error", cancelErr, "purchase_id", purchaseId)
 		}
-		return "", 0, err
+		return "", 0, 0, err
 	}
 
 	updates := map[string]interface{}{
@@ -325,10 +396,10 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 	err = s.purchaseRepository.UpdateFields(ctx, purchaseId, updates)
 	if err != nil {
 		slog.Error("Error updating purchase", "error", err)
-		return "", 0, err
+		return "", 0, 0, err
 	}
 
-	return paymentResp.PayURL, purchaseId, nil
+	return paymentResp.PayURL, purchaseId, amount, nil
 }
 
 func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (string, error) {
@@ -364,7 +435,7 @@ func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (st
 
 }
 
-func (s PaymentService) createTributeInvoice(ctx context.Context, amount float64, months int, customer *database.Customer) (url string, purchaseId int64, err error) {
+func (s PaymentService) createTributeInvoice(ctx context.Context, amount float64, months int, customer *database.Customer) (url string, purchaseId int64, chargedAmount float64, err error) {
 	purchaseId, err = s.purchaseRepository.Create(ctx, &database.Purchase{
 		InvoiceType: database.InvoiceTypeTribute,
 		Status:      database.PurchaseStatusPending,
@@ -375,10 +446,10 @@ func (s PaymentService) createTributeInvoice(ctx context.Context, amount float64
 	})
 	if err != nil {
 		slog.Error("Error creating purchase", "error", err)
-		return "", 0, err
+		return "", 0, 0, err
 	}
 
-	return "", purchaseId, nil
+	return "", purchaseId, amount, nil
 }
 
 // calculateRollover returns how many bytes of an existing admin topup remain unused

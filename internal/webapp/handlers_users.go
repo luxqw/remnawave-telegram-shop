@@ -25,21 +25,22 @@ func pathInt64(w http.ResponseWriter, r *http.Request, name string) (int64, bool
 }
 
 type customerDTO struct {
-	ID               int64      `json:"id"`
-	TelegramID       int64      `json:"telegramId"`
-	ExpireAt         *time.Time `json:"expireAt"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	SubscriptionLink *string    `json:"subscriptionLink"`
-	Language         string     `json:"language"`
-	IsTrial          bool       `json:"isTrial"`
-	Username         *string    `json:"username,omitempty"`
+	ID                     int64      `json:"id"`
+	TelegramID             int64      `json:"telegramId"`
+	ExpireAt               *time.Time `json:"expireAt"`
+	CreatedAt              time.Time  `json:"createdAt"`
+	SubscriptionLink       *string    `json:"subscriptionLink"`
+	Language               string     `json:"language"`
+	IsTrial                bool       `json:"isTrial"`
+	Username               *string    `json:"username,omitempty"`
+	TributeAutorenewPaused bool       `json:"tributeAutorenewPaused"`
 }
 
 func toCustomerDTO(c database.Customer) customerDTO {
 	return customerDTO{
 		ID: c.ID, TelegramID: c.TelegramID, ExpireAt: c.ExpireAt, CreatedAt: c.CreatedAt,
 		SubscriptionLink: c.SubscriptionLink, Language: c.Language, IsTrial: c.IsTrial,
-		Username: c.Username,
+		Username: c.Username, TributeAutorenewPaused: c.TributeAutorenewPaused,
 	}
 }
 
@@ -217,6 +218,37 @@ func (h *Handler) handleUserAudit(w http.ResponseWriter, r *http.Request) {
 		items = append(items, toAuditLogDTO(e))
 	}
 	h.hydrateAuditUsernames(r.Context(), items)
+	writeJSON(w, http.StatusOK, items)
+}
+
+type adminMessageDTO struct {
+	ID        int64     `json:"id"`
+	Direction string    `json:"direction"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func toAdminMessageDTO(m database.AdminMessage) adminMessageDTO {
+	return adminMessageDTO{ID: m.ID, Direction: string(m.Direction), Text: m.Text, CreatedAt: m.CreatedAt}
+}
+
+// handleUserMessages returns the customer's two-way admin message thread (decision 13a), oldest
+// first — both the admin's own SendMessage sends and the customer's free-text replies captured by
+// handler.AdminReplyMessageHandler.
+func (h *Handler) handleUserMessages(w http.ResponseWriter, r *http.Request) {
+	targetID, ok := pathInt64(w, r, "id")
+	if !ok {
+		return
+	}
+	messages, err := h.adminMessageRepository.FindByCustomerTelegramID(r.Context(), targetID, 200)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := make([]adminMessageDTO, 0, len(messages))
+	for _, m := range messages {
+		items = append(items, toAdminMessageDTO(m))
+	}
 	writeJSON(w, http.StatusOK, items)
 }
 
@@ -416,6 +448,30 @@ func (h *Handler) handleUserTrial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.ops.SetTrial(r.Context(), targetID, req.IsTrial, "webapi"); err != nil {
+		writeOpsError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type tributeAutorenewRequest struct {
+	Paused bool `json:"paused"`
+}
+
+// handleUserTributeAutorenew is the admin-facing reaction to decision 9's streak-cap alert
+// (decision 10): pauses/resumes SubscriptionService's optimistic Tribute auto-renewal for one
+// customer without needing direct DB access.
+func (h *Handler) handleUserTributeAutorenew(w http.ResponseWriter, r *http.Request) {
+	targetID, ok := pathInt64(w, r, "id")
+	if !ok {
+		return
+	}
+	var req tributeAutorenewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := h.ops.SetTributeAutorenewPaused(r.Context(), targetID, req.Paused, "webapi"); err != nil {
 		writeOpsError(w, err)
 		return
 	}

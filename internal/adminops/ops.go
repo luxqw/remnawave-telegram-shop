@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,17 +43,19 @@ var (
 // the affected customer and to deliver broadcasts — it never parses inbound Telegram
 // updates/callbacks, which is what keeps this package UI-agnostic.
 type Service struct {
-	customerRepository        *database.CustomerRepository
-	purchaseRepository        *database.PurchaseRepository
-	topupRepository           *database.TrafficTopupRepository
-	referralRepository        *database.ReferralRepository
-	auditLogRepository        *database.AdminAuditLogRepository
-	webhookInboxRepository    *database.WebhookInboxRepository
-	notificationLogRepository *database.NotificationLogRepository
-	remnawaveClient           *remnawave.Client
-	syncService               *syncsvc.SyncService
-	telegramBot               *bot.Bot
-	translation               *translation.Manager
+	customerRepository           *database.CustomerRepository
+	purchaseRepository           *database.PurchaseRepository
+	topupRepository              *database.TrafficTopupRepository
+	referralRepository           *database.ReferralRepository
+	auditLogRepository           *database.AdminAuditLogRepository
+	webhookInboxRepository       *database.WebhookInboxRepository
+	notificationLogRepository    *database.NotificationLogRepository
+	adminMessageRepository       *database.AdminMessageRepository
+	botRuntimeSettingsRepository *database.BotRuntimeSettingsRepository
+	remnawaveClient              *remnawave.Client
+	syncService                  *syncsvc.SyncService
+	telegramBot                  *bot.Bot
+	translation                  *translation.Manager
 }
 
 func NewService(
@@ -63,23 +66,27 @@ func NewService(
 	auditLogRepository *database.AdminAuditLogRepository,
 	webhookInboxRepository *database.WebhookInboxRepository,
 	notificationLogRepository *database.NotificationLogRepository,
+	adminMessageRepository *database.AdminMessageRepository,
+	botRuntimeSettingsRepository *database.BotRuntimeSettingsRepository,
 	remnawaveClient *remnawave.Client,
 	syncService *syncsvc.SyncService,
 	telegramBot *bot.Bot,
 	translationManager *translation.Manager,
 ) *Service {
 	return &Service{
-		customerRepository:        customerRepository,
-		purchaseRepository:        purchaseRepository,
-		topupRepository:           topupRepository,
-		referralRepository:        referralRepository,
-		auditLogRepository:        auditLogRepository,
-		webhookInboxRepository:    webhookInboxRepository,
-		notificationLogRepository: notificationLogRepository,
-		remnawaveClient:           remnawaveClient,
-		syncService:               syncService,
-		telegramBot:               telegramBot,
-		translation:               translationManager,
+		customerRepository:           customerRepository,
+		purchaseRepository:           purchaseRepository,
+		topupRepository:              topupRepository,
+		referralRepository:           referralRepository,
+		auditLogRepository:           auditLogRepository,
+		webhookInboxRepository:       webhookInboxRepository,
+		notificationLogRepository:    notificationLogRepository,
+		adminMessageRepository:       adminMessageRepository,
+		botRuntimeSettingsRepository: botRuntimeSettingsRepository,
+		remnawaveClient:              remnawaveClient,
+		syncService:                  syncService,
+		telegramBot:                  telegramBot,
+		translation:                  translationManager,
 	}
 }
 
@@ -496,6 +503,39 @@ func (s *Service) SetTrial(ctx context.Context, targetID int64, isTrial bool, so
 	return nil
 }
 
+// SetTributeAutorenewPaused is the manual reaction to decision 9's streak-cap alert (decision
+// 10): lets an admin immediately stop SubscriptionService's optimistic Tribute auto-renewal for
+// one customer once they've verified (or suspect) the subscription is no longer genuinely paid,
+// instead of updating the customer table by hand.
+func (s *Service) SetTributeAutorenewPaused(ctx context.Context, targetID int64, paused bool, source string) error {
+	param := 0
+	if paused {
+		param = 1
+	}
+	customer, err := s.customerRepository.FindByTelegramId(ctx, targetID)
+	if err != nil {
+		s.audit(ctx, "set_tribute_autorenew_paused", targetID, &param, err, source)
+		return err
+	}
+	if customer == nil {
+		wrapped := fmt.Errorf("%w: %d", ErrCustomerNotFound, targetID)
+		s.audit(ctx, "set_tribute_autorenew_paused", targetID, &param, wrapped, source)
+		return wrapped
+	}
+	if err := s.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{"tribute_autorenew_paused": paused}); err != nil {
+		s.audit(ctx, "set_tribute_autorenew_paused", targetID, &param, err, source)
+		return err
+	}
+	if paused {
+		s.notifyKey(ctx, targetID, "admin_tribute_autorenew_paused")
+	} else {
+		s.notifyKey(ctx, targetID, "admin_tribute_autorenew_resumed")
+	}
+	slog.Info("adminops: set_tribute_autorenew_paused", "telegram_id", targetID, "paused", paused, "source", source)
+	s.audit(ctx, "set_tribute_autorenew_paused", targetID, &param, nil, source)
+	return nil
+}
+
 // RunSync triggers a full Remnawave->bot-DB customer sync. Mirrors AdminPanelSyncCallback
 // exactly (fire-and-forget, no confirmation needed — it's non-destructive). Audit-logged like
 // every other adminops mutation even though the bot didn't log this before.
@@ -534,5 +574,57 @@ func (s *Service) SendMessage(ctx context.Context, targetID int64, text, source 
 	if err != nil {
 		return fmt.Errorf("send message: %w", err)
 	}
+
+	// Persisted so the admin panel can render this alongside the customer's own replies as one
+	// thread (decision 13a) — best-effort, the message already reached Telegram either way.
+	if s.adminMessageRepository != nil {
+		if _, logErr := s.adminMessageRepository.Create(ctx, &database.AdminMessage{
+			CustomerTelegramID: targetID, Direction: database.MessageDirectionOut, Text: trimmed,
+		}); logErr != nil {
+			slog.Error("adminops: persist outbound message failed", "telegram_id", targetID, "error", logErr)
+		}
+	}
 	return nil
+}
+
+// SetRuntimeSettings validates and applies a partial update to the admin-editable price whitelist
+// (decision 13b), persisting to bot_runtime_settings for durability across restarts and hot-
+// swapping config's in-memory override immediately. Returns the full effective settings snapshot.
+func (s *Service) SetRuntimeSettings(ctx context.Context, updates map[string]string, source string) (map[string]string, error) {
+	allowed := make(map[string]bool, len(config.RuntimeSettingKeys))
+	for _, k := range config.RuntimeSettingKeys {
+		allowed[k] = true
+	}
+	for key, value := range updates {
+		if !allowed[key] {
+			err := fmt.Errorf("%q is not an editable runtime setting", key)
+			s.auditText(ctx, "set_runtime_setting", 0, &key, err, source)
+			return nil, err
+		}
+		n, err := strconv.Atoi(value)
+		if err != nil || n <= 0 {
+			wrapped := fmt.Errorf("%q must be a positive integer, got %q", key, value)
+			s.auditText(ctx, "set_runtime_setting", 0, &value, wrapped, source)
+			return nil, wrapped
+		}
+	}
+
+	if err := s.botRuntimeSettingsRepository.SetMany(ctx, updates); err != nil {
+		s.audit(ctx, "set_runtime_setting", 0, nil, err, source)
+		return nil, err
+	}
+
+	merged, err := s.botRuntimeSettingsRepository.FindAll(ctx)
+	if err != nil {
+		s.audit(ctx, "set_runtime_setting", 0, nil, err, source)
+		return nil, err
+	}
+	config.ApplyRuntimeSettings(merged)
+
+	for key, value := range updates {
+		changed := fmt.Sprintf("%s=%s", key, value)
+		s.auditText(ctx, "set_runtime_setting", 0, &changed, nil, source)
+		slog.Info("adminops: runtime setting changed", "key", key, "value", value, "source", source)
+	}
+	return config.RuntimeSettingsSnapshot(), nil
 }

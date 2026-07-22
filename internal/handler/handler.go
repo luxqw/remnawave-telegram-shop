@@ -11,17 +11,19 @@ import (
 )
 
 type Handler struct {
-	customerRepository    *database.CustomerRepository
-	purchaseRepository    *database.PurchaseRepository
-	rollypayClient        *rollypay.Client
-	translation           *translation.Manager
-	paymentService        *payment.PaymentService
-	syncService           *isync.SyncService
-	referralRepository    *database.ReferralRepository
-	cache                 *cache.Cache
-	remnawaveClient       *remnawave.Client
-	topupRepository       *database.TrafficTopupRepository
-	deviceTopupRepository *database.DeviceTopupRepository
+	customerRepository     *database.CustomerRepository
+	purchaseRepository     *database.PurchaseRepository
+	rollypayClient         *rollypay.Client
+	translation            *translation.Manager
+	paymentService         *payment.PaymentService
+	syncService            *isync.SyncService
+	referralRepository     *database.ReferralRepository
+	cache                  *cache.Cache
+	remnawaveClient        *remnawave.Client
+	topupRepository        *database.TrafficTopupRepository
+	deviceTopupRepository  *database.DeviceTopupRepository
+	deviceAddonRepository  *database.DeviceAddonRepository
+	adminMessageRepository *database.AdminMessageRepository
 	// topupAwaitingInput tracks telegram IDs currently expected to send a free-text GB amount for
 	// the custom top-up flow, mapping to the prompt message ID (for editing it in place). Reuses
 	// cache.Cache verbatim rather than a new type — same TTL-expiring-map shape already used for
@@ -41,20 +43,24 @@ func NewHandler(
 	remnawaveClient *remnawave.Client,
 	topupRepository *database.TrafficTopupRepository,
 	deviceTopupRepository *database.DeviceTopupRepository,
+	deviceAddonRepository *database.DeviceAddonRepository,
+	adminMessageRepository *database.AdminMessageRepository,
 	topupAwaitingInput *cache.Cache,
 ) *Handler {
 	return &Handler{
-		syncService:           syncService,
-		paymentService:        paymentService,
-		customerRepository:    customerRepository,
-		purchaseRepository:    purchaseRepository,
-		rollypayClient:        rollypayClient,
-		translation:           translation,
-		referralRepository:    referralRepository,
-		cache:                 cache,
-		remnawaveClient:       remnawaveClient,
-		topupRepository:       topupRepository,
-		deviceTopupRepository: deviceTopupRepository,
-		topupAwaitingInput:    topupAwaitingInput,
+		syncService:            syncService,
+		paymentService:         paymentService,
+		customerRepository:     customerRepository,
+		purchaseRepository:     purchaseRepository,
+		rollypayClient:         rollypayClient,
+		translation:            translation,
+		referralRepository:     referralRepository,
+		cache:                  cache,
+		remnawaveClient:        remnawaveClient,
+		topupRepository:        topupRepository,
+		deviceTopupRepository:  deviceTopupRepository,
+		deviceAddonRepository:  deviceAddonRepository,
+		adminMessageRepository: adminMessageRepository,
+		topupAwaitingInput:     topupAwaitingInput,
 	}
 }

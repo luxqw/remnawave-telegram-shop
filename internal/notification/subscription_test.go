@@ -9,12 +9,20 @@ import (
 )
 
 type customerRepoMock struct {
-	customers *[]database.Customer
-	err       error
+	customers    *[]database.Customer
+	err          error
+	updateCalls  []int64
+	updateFields []map[string]interface{}
 }
 
 func (m *customerRepoMock) FindByExpirationRange(ctx context.Context, startDate, endDate time.Time) (*[]database.Customer, error) {
 	return m.customers, m.err
+}
+
+func (m *customerRepoMock) UpdateFields(ctx context.Context, id int64, updates map[string]interface{}) error {
+	m.updateCalls = append(m.updateCalls, id)
+	m.updateFields = append(m.updateFields, updates)
+	return nil
 }
 
 type purchaseRepoMock struct {
@@ -40,7 +48,7 @@ type paymentServiceMock struct {
 	purchaseIDToReturn int64
 }
 
-func (m *paymentServiceMock) CreatePurchase(ctx context.Context, amount float64, months int, customer *database.Customer, invoiceType database.InvoiceType) (string, int64, error) {
+func (m *paymentServiceMock) CreatePurchase(ctx context.Context, amount float64, months int, customer *database.Customer, invoiceType database.InvoiceType) (string, int64, float64, error) {
 	m.createCalls++
 	m.amounts = append(m.amounts, amount)
 	m.months = append(m.months, months)
@@ -50,7 +58,7 @@ func (m *paymentServiceMock) CreatePurchase(ctx context.Context, amount float64,
 	if m.purchaseIDToReturn == 0 {
 		m.purchaseIDToReturn = int64(m.createCalls)
 	}
-	return "", m.purchaseIDToReturn, m.createErr
+	return "", m.purchaseIDToReturn, amount, m.createErr
 }
 
 func (m *paymentServiceMock) ProcessPurchaseById(ctx context.Context, purchaseId int64) error {
@@ -95,6 +103,61 @@ func TestSubscriptionService_ProcessSubscriptionExpiration_ProcessesTribute(t *t
 	}
 	if len(pRepo.receivedIDs) != 1 || pRepo.receivedIDs[0] != customers[0].ID {
 		t.Fatalf("expected purchase repository to query by customer id %d, got %#v", customers[0].ID, pRepo.receivedIDs)
+	}
+	if len(cRepo.updateFields) != 1 || cRepo.updateFields[0]["tribute_autorenew_streak"] != 1 {
+		t.Fatalf("expected tribute_autorenew_streak incremented to 1, got %#v", cRepo.updateFields)
+	}
+}
+
+func TestSubscriptionService_ProcessSubscriptionExpiration_SkipsAutoRenewWhenPausedByAdmin(t *testing.T) {
+	expireAt := time.Now().Add(24 * time.Hour)
+	customers := []database.Customer{{ID: 3, ExpireAt: &expireAt, TributeAutorenewPaused: true}}
+	tributes := []database.Purchase{{CustomerID: 3, Amount: 10, Month: 1}}
+
+	cRepo := &customerRepoMock{customers: &customers}
+	pRepo := &purchaseRepoMock{tributes: &tributes}
+	payMock := &paymentServiceMock{}
+
+	svc := NewSubscriptionService(cRepo, pRepo, payMock, nil, nil, nil)
+	svc.notify = func(ctx context.Context, customer database.Customer) error {
+		t.Fatalf("sendNotification should not be called for a paused tribute customer")
+		return nil
+	}
+
+	if err := svc.ProcessSubscriptionExpiration(); err != nil {
+		t.Fatalf("ProcessSubscriptionExpiration returned error: %v", err)
+	}
+	if payMock.createCalls != 0 {
+		t.Fatalf("expected create purchase not to be called when admin-paused, got %d", payMock.createCalls)
+	}
+}
+
+// TestSubscriptionService_ProcessSubscriptionExpiration_StopsAutoRenewAtStreakCap guards decision
+// 9's safety cap: without it, a lost Tribute cancellation webhook would let this cron grant free
+// access forever purely from local DB state, since there's no way to verify with Tribute's API.
+func TestSubscriptionService_ProcessSubscriptionExpiration_StopsAutoRenewAtStreakCap(t *testing.T) {
+	expireAt := time.Now().Add(24 * time.Hour)
+	customers := []database.Customer{{ID: 4, ExpireAt: &expireAt, TributeAutorenewStreak: tributeAutorenewStreakCap}}
+	tributes := []database.Purchase{{CustomerID: 4, Amount: 10, Month: 1}}
+
+	cRepo := &customerRepoMock{customers: &customers}
+	pRepo := &purchaseRepoMock{tributes: &tributes}
+	payMock := &paymentServiceMock{}
+
+	svc := NewSubscriptionService(cRepo, pRepo, payMock, nil, nil, nil)
+	svc.notify = func(ctx context.Context, customer database.Customer) error {
+		t.Fatalf("sendNotification should not be called once the streak cap is reached")
+		return nil
+	}
+
+	if err := svc.ProcessSubscriptionExpiration(); err != nil {
+		t.Fatalf("ProcessSubscriptionExpiration returned error: %v", err)
+	}
+	if payMock.createCalls != 0 {
+		t.Fatalf("expected create purchase not to be called once streak cap is reached, got %d", payMock.createCalls)
+	}
+	if len(cRepo.updateFields) != 0 {
+		t.Fatalf("expected no streak update once cap already reached, got %#v", cRepo.updateFields)
 	}
 }
 

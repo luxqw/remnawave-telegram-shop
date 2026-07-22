@@ -16,6 +16,7 @@ export interface Customer {
   language: string;
   isTrial: boolean;
   username?: string;
+  tributeAutorenewPaused: boolean;
 }
 
 export interface RemnawaveUser {
@@ -194,3 +195,17 @@ export interface HeaderStats {
   mrrCurrency: string;
   expiringToday: number;
 }
+
+// AdminMessage is one entry in a customer's two-way admin message thread — "out" is an
+// admin-authored DM (SendMessage), "in" is the customer's own free-text reply, captured by
+// handler.AdminReplyMessageHandler.
+export interface AdminMessage {
+  id: number;
+  direction: "in" | "out";
+  text: string;
+  createdAt: string;
+}
+
+// RuntimeSettings is a flat key/value map of the admin-editable price whitelist
+// (config.RuntimeSettingKeys) — both the GET snapshot and the PATCH body use this shape.
+export type RuntimeSettings = Record<string, string>;

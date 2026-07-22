@@ -127,8 +127,12 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 				ParseMode: models.ParseModeHTML,
 				Text:      h.translation.GetText(langCode, "topup_pending_warning"),
 				ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+					// Cancel immediately lifts the pending block (FindRecentPendingByCustomerID);
+					// Back just navigates away and leaves it in place — RollyPay has no cancel/void
+					// API to call either way, so this button copy is the only distinction that
+					// exists (decision 7).
 					{h.translation.GetButton(langCode, "topup_cancel_button").InlineCallback(fmt.Sprintf("%s?id=%d", CallbackPaymentCancel, pending.ID))},
-					{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+					{h.translation.GetButton(langCode, "back_keeps_pending_button").InlineCallback(CallbackStart)},
 				}},
 			})
 			return
@@ -136,15 +140,18 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	}
 
 	ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, update.CallbackQuery.From.Username)
-	paymentURL, purchaseId, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
+	paymentURL, purchaseId, chargedAmount, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
 	if err != nil {
 		slog.Error("Error creating payment", "error", err)
 		h.showPaymentError(ctx, b, callback.Chat.ID, callback.ID, langCode)
 		return
 	}
 
+	// chargedAmount may exceed price: createRollyPayInvoice folds an active bundled device addon's
+	// renewal cost into the subscription invoice (decision 2), and the summary must show what's
+	// actually being charged, not the bare subscription price.
 	monthLabel := h.translation.GetText(langCode, fmt.Sprintf("month_%d", month))
-	summaryText := fmt.Sprintf(h.translation.GetText(langCode, "payment_summary"), monthLabel, price)
+	summaryText := fmt.Sprintf(h.translation.GetText(langCode, "payment_summary"), monthLabel, int(chargedAmount))
 
 	message, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    callback.Chat.ID,
@@ -155,7 +162,10 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
 					h.translation.GetButton(langCode, "pay_button").InlineURL(paymentURL),
-					h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackBuy),
+					// This purchase is now pending (30-min block) — Back only navigates, it does not
+					// cancel it. To actually cancel, the customer has to come back here and use the
+					// pending-purchase screen's Cancel button above.
+					h.translation.GetButton(langCode, "back_keeps_pending_button").InlineCallback(CallbackBuy),
 				},
 			},
 		},
