@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -73,6 +74,72 @@ type config struct {
 }
 
 var conf config
+
+// runtimeOverrides holds admin-editable price overrides (see RuntimeSettingKeys), applied on top
+// of the .env-derived conf without a container restart — decision 13b's "runtime settings
+// hot-reload". A whole-map atomic.Pointer swap (rather than a mutex over individual fields) means
+// concurrent readers during a PATCH always see either the old or the new set, never a partial mix.
+var runtimeOverrides atomic.Pointer[map[string]string]
+
+// RuntimeSettingKeys is the admin-PATCH-able settings whitelist — deliberately just prices for
+// this first pass. GB_TOPUP_TIERS is a CSV format whose parser (parseGBTopupTiers) panics on a
+// malformed value, which is fine for a startup-time misconfiguration but not safe to reach from a
+// live PATCH without first teaching it to return an error instead; left as a follow-up.
+var RuntimeSettingKeys = []string{"PRICE_1", "PRICE_3", "PRICE_6", "PRICE_12", "DEVICE_SLOT_PRICE_RUB"}
+
+// ApplyRuntimeSettings replaces the whole runtime override set — call with every currently-stored
+// bot_runtime_settings row (not just the ones a given PATCH changed), since this is a full
+// replacement, not a merge.
+func ApplyRuntimeSettings(settings map[string]string) {
+	m := make(map[string]string, len(settings))
+	for k, v := range settings {
+		m[k] = v
+	}
+	runtimeOverrides.Store(&m)
+}
+
+// RuntimeSettingsSnapshot returns the currently effective value (override if set, else the
+// .env-derived default) for every whitelisted key — powers the admin settings GET endpoint.
+func RuntimeSettingsSnapshot() map[string]string {
+	snapshot := make(map[string]string, len(RuntimeSettingKeys))
+	for _, key := range RuntimeSettingKeys {
+		snapshot[key] = strconv.Itoa(runtimeOverrideInt(key, runtimeSettingDefault(key)))
+	}
+	return snapshot
+}
+
+func runtimeSettingDefault(key string) int {
+	switch key {
+	case "PRICE_1":
+		return conf.price1
+	case "PRICE_3":
+		return conf.price3
+	case "PRICE_6":
+		return conf.price6
+	case "PRICE_12":
+		return conf.price12
+	case "DEVICE_SLOT_PRICE_RUB":
+		return conf.deviceSlotPriceRUB
+	default:
+		return 0
+	}
+}
+
+func runtimeOverrideInt(key string, fallback int) int {
+	p := runtimeOverrides.Load()
+	if p == nil {
+		return fallback
+	}
+	v, ok := (*p)[key]
+	if !ok {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
 
 func RemnawaveTag() string {
 	return conf.remnawaveTag
@@ -204,19 +271,19 @@ func ProxyURL() string {
 }
 
 func Price1() int {
-	return conf.price1
+	return runtimeOverrideInt("PRICE_1", conf.price1)
 }
 
 func Price3() int {
-	return conf.price3
+	return runtimeOverrideInt("PRICE_3", conf.price3)
 }
 
 func Price6() int {
-	return conf.price6
+	return runtimeOverrideInt("PRICE_6", conf.price6)
 }
 
 func Price12() int {
-	return conf.price12
+	return runtimeOverrideInt("PRICE_12", conf.price12)
 }
 
 func DaysInMonth() int {
@@ -230,15 +297,15 @@ func ExternalSquadUUID() uuid.UUID {
 func Price(month int) int {
 	switch month {
 	case 1:
-		return conf.price1
+		return Price1()
 	case 3:
-		return conf.price3
+		return Price3()
 	case 6:
-		return conf.price6
+		return Price6()
 	case 12:
-		return conf.price12
+		return Price12()
 	default:
-		return conf.price1
+		return Price1()
 	}
 }
 
@@ -332,13 +399,13 @@ func GBTopupCustomMaxGB() int {
 }
 
 func DeviceSlotPriceRUB() int {
-	return conf.deviceSlotPriceRUB
+	return runtimeOverrideInt("DEVICE_SLOT_PRICE_RUB", conf.deviceSlotPriceRUB)
 }
 
 // DeviceSlotDailyPriceRUB is the per-day rate used to prorate a mid-cycle device slot purchase
 // against the days remaining in the customer's current subscription cycle.
 func DeviceSlotDailyPriceRUB() float64 {
-	return float64(conf.deviceSlotPriceRUB) / float64(conf.daysInMonth)
+	return float64(DeviceSlotPriceRUB()) / float64(conf.daysInMonth)
 }
 
 const bytesInGigabyte = 1073741824

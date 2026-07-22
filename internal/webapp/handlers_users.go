@@ -221,6 +221,37 @@ func (h *Handler) handleUserAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
+type adminMessageDTO struct {
+	ID        int64     `json:"id"`
+	Direction string    `json:"direction"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func toAdminMessageDTO(m database.AdminMessage) adminMessageDTO {
+	return adminMessageDTO{ID: m.ID, Direction: string(m.Direction), Text: m.Text, CreatedAt: m.CreatedAt}
+}
+
+// handleUserMessages returns the customer's two-way admin message thread (decision 13a), oldest
+// first — both the admin's own SendMessage sends and the customer's free-text replies captured by
+// handler.AdminReplyMessageHandler.
+func (h *Handler) handleUserMessages(w http.ResponseWriter, r *http.Request) {
+	targetID, ok := pathInt64(w, r, "id")
+	if !ok {
+		return
+	}
+	messages, err := h.adminMessageRepository.FindByCustomerTelegramID(r.Context(), targetID, 200)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := make([]adminMessageDTO, 0, len(messages))
+	for _, m := range messages {
+		items = append(items, toAdminMessageDTO(m))
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
 type referralDTO struct {
 	ID               int64     `json:"id"`
 	ReferrerID       int64     `json:"referrerId"`

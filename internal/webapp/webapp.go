@@ -31,21 +31,23 @@ type BuildInfo struct {
 // Handler owns every dependency the admin web API needs. Constructed once in main.go from the
 // same repository/service instances the bot handlers use.
 type Handler struct {
-	customerRepository        *database.CustomerRepository
-	purchaseRepository        *database.PurchaseRepository
-	referralRepository        *database.ReferralRepository
-	auditLogRepository        *database.AdminAuditLogRepository
-	webhookInboxRepository    *database.WebhookInboxRepository
-	activityRepository        *database.ActivityRepository
-	notificationLogRepository *database.NotificationLogRepository
-	remnawaveClient           *remnawave.Client
-	tributeClient             *tribute.Client         // nil when Tribute webhooks are disabled
-	rollypayClient            *rollypay.WebhookClient // nil when RollyPay webhooks are disabled
-	ops                       *adminops.Service
-	subscriptionService       *notification.SubscriptionService
-	trafficWarningService     *notification.TrafficWarningService
-	pool                      *pgxpool.Pool
-	build                     BuildInfo
+	customerRepository           *database.CustomerRepository
+	purchaseRepository           *database.PurchaseRepository
+	referralRepository           *database.ReferralRepository
+	auditLogRepository           *database.AdminAuditLogRepository
+	webhookInboxRepository       *database.WebhookInboxRepository
+	activityRepository           *database.ActivityRepository
+	notificationLogRepository    *database.NotificationLogRepository
+	adminMessageRepository       *database.AdminMessageRepository
+	botRuntimeSettingsRepository *database.BotRuntimeSettingsRepository
+	remnawaveClient              *remnawave.Client
+	tributeClient                *tribute.Client         // nil when Tribute webhooks are disabled
+	rollypayClient               *rollypay.WebhookClient // nil when RollyPay webhooks are disabled
+	ops                          *adminops.Service
+	subscriptionService          *notification.SubscriptionService
+	trafficWarningService        *notification.TrafficWarningService
+	pool                         *pgxpool.Pool
+	build                        BuildInfo
 
 	loginLimiter *rateLimiter
 
@@ -67,6 +69,8 @@ func NewHandler(
 	webhookInboxRepository *database.WebhookInboxRepository,
 	activityRepository *database.ActivityRepository,
 	notificationLogRepository *database.NotificationLogRepository,
+	adminMessageRepository *database.AdminMessageRepository,
+	botRuntimeSettingsRepository *database.BotRuntimeSettingsRepository,
 	remnawaveClient *remnawave.Client,
 	tributeClient *tribute.Client,
 	rollypayClient *rollypay.WebhookClient,
@@ -77,22 +81,24 @@ func NewHandler(
 	build BuildInfo,
 ) *Handler {
 	h := &Handler{
-		customerRepository:        customerRepository,
-		purchaseRepository:        purchaseRepository,
-		referralRepository:        referralRepository,
-		auditLogRepository:        auditLogRepository,
-		webhookInboxRepository:    webhookInboxRepository,
-		activityRepository:        activityRepository,
-		notificationLogRepository: notificationLogRepository,
-		remnawaveClient:           remnawaveClient,
-		tributeClient:             tributeClient,
-		rollypayClient:            rollypayClient,
-		ops:                       ops,
-		subscriptionService:       subscriptionService,
-		trafficWarningService:     trafficWarningService,
-		pool:                      pool,
-		build:                     build,
-		loginLimiter:              newRateLimiter(10, time.Minute),
+		customerRepository:           customerRepository,
+		purchaseRepository:           purchaseRepository,
+		referralRepository:           referralRepository,
+		auditLogRepository:           auditLogRepository,
+		webhookInboxRepository:       webhookInboxRepository,
+		activityRepository:           activityRepository,
+		notificationLogRepository:    notificationLogRepository,
+		adminMessageRepository:       adminMessageRepository,
+		botRuntimeSettingsRepository: botRuntimeSettingsRepository,
+		remnawaveClient:              remnawaveClient,
+		tributeClient:                tributeClient,
+		rollypayClient:               rollypayClient,
+		ops:                          ops,
+		subscriptionService:          subscriptionService,
+		trafficWarningService:        trafficWarningService,
+		pool:                         pool,
+		build:                        build,
+		loginLimiter:                 newRateLimiter(10, time.Minute),
 	}
 	h.mux = withLogging(withCSP(h.routes()))
 	return h
@@ -144,6 +150,7 @@ func (h *Handler) routes() http.Handler {
 	mux.HandleFunc("POST /admin/api/users/{id}/trial", h.requireAdminSession(h.handleUserTrial))
 	mux.HandleFunc("POST /admin/api/users/{id}/tribute-autorenew", h.requireAdminSession(h.handleUserTributeAutorenew))
 	mux.HandleFunc("POST /admin/api/users/{id}/message", h.requireAdminSession(h.handleUserSendMessage))
+	mux.HandleFunc("GET /admin/api/users/{id}/messages", h.requireAdminSession(h.handleUserMessages))
 
 	// Broadcast
 	mux.HandleFunc("POST /admin/api/broadcast/preview", h.requireAdminSession(h.handleBroadcastPreview))
@@ -158,6 +165,8 @@ func (h *Handler) routes() http.Handler {
 	mux.HandleFunc("GET /admin/api/audit", h.requireAdminSession(h.handleAuditList))
 
 	// System
+	mux.HandleFunc("GET /admin/api/system/settings", h.requireAdminSession(h.handleSystemSettingsGet))
+	mux.HandleFunc("PATCH /admin/api/system/settings", h.requireAdminSession(h.handleSystemSettingsPatch))
 	mux.HandleFunc("POST /admin/api/system/sync", h.requireAdminSession(h.handleSystemSync))
 	mux.HandleFunc("POST /admin/api/system/fix-traffic-strategy/preview", h.requireAdminSession(h.handleFixStrategyPreview))
 	mux.HandleFunc("POST /admin/api/system/fix-traffic-strategy/apply", h.requireAdminSession(h.handleFixStrategyApply))

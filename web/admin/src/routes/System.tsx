@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api, ApiError } from "../api/client";
-import type { FixStrategyPreview, FixStrategyJobStatus } from "../api/types";
+import type { FixStrategyPreview, FixStrategyJobStatus, RuntimeSettings } from "../api/types";
 import { GlassCard } from "../components/GlassCard";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { useToast } from "../components/Toast";
+
+// SETTING_LABELS mirrors config.RuntimeSettingKeys — kept as a display label map here rather than
+// derived from the API response so field order and Russian labels stay stable regardless of Go
+// map iteration order.
+const SETTING_LABELS: Record<string, string> = {
+  PRICE_1: "Цена: 1 месяц (₽)",
+  PRICE_3: "Цена: 3 месяца (₽)",
+  PRICE_6: "Цена: 6 месяцев (₽)",
+  PRICE_12: "Цена: 12 месяцев (₽)",
+  DEVICE_SLOT_PRICE_RUB: "Цена слота устройства (₽/мес)",
+};
 
 export function System() {
   const toast = useToast();
@@ -12,6 +23,41 @@ export function System() {
   const [confirmApplyOpen, setConfirmApplyOpen] = useState(false);
   const [job, setJob] = useState<FixStrategyJobStatus | null>(null);
   const pollRef = useRef<number | null>(null);
+  const [settings, setSettings] = useState<RuntimeSettings | null>(null);
+  const [settingsInput, setSettingsInput] = useState<RuntimeSettings>({});
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  useEffect(() => {
+    api.get<RuntimeSettings>("/admin/api/system/settings").then((s) => {
+      setSettings(s);
+      setSettingsInput(s);
+    });
+  }, []);
+
+  const saveSettings = async () => {
+    if (!settings) return;
+    const changed: RuntimeSettings = {};
+    for (const key of Object.keys(SETTING_LABELS)) {
+      if (settingsInput[key] !== undefined && settingsInput[key] !== settings[key]) {
+        changed[key] = settingsInput[key];
+      }
+    }
+    if (Object.keys(changed).length === 0) {
+      toast.push("Нет изменений");
+      return;
+    }
+    setSavingSettings(true);
+    try {
+      const updated = await api.patch<RuntimeSettings>("/admin/api/system/settings", changed);
+      setSettings(updated);
+      setSettingsInput(updated);
+      toast.push("Настройки применены без перезапуска");
+    } catch (err) {
+      toast.push(err instanceof ApiError ? err.message : "Ошибка сохранения", "error");
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -58,6 +104,32 @@ export function System() {
 
   return (
     <div class="stack">
+      <GlassCard>
+        <div class="stat-tile-label" style={{ marginBottom: 10 }}>Настройки (без перезапуска)</div>
+        <p class="page-subtitle" style={{ marginBottom: 12 }}>
+          Изменения применяются сразу и переживают деплой — хранятся в БД поверх .env.
+        </p>
+        {settings === null ? (
+          <div class="page-subtitle">Загрузка…</div>
+        ) : (
+          <div class="stack">
+            {Object.entries(SETTING_LABELS).map(([key, label]) => (
+              <div class="field" key={key}>
+                <label class="field-label">{label}</label>
+                <input
+                  class="input input-compact"
+                  value={settingsInput[key] ?? ""}
+                  onInput={(e) => setSettingsInput((prev) => ({ ...prev, [key]: (e.target as HTMLInputElement).value }))}
+                />
+              </div>
+            ))}
+            <button class="btn btn-sm" onClick={saveSettings} disabled={savingSettings}>
+              {savingSettings ? "Сохранение…" : "Сохранить"}
+            </button>
+          </div>
+        )}
+      </GlassCard>
+
       <GlassCard>
         <div class="stat-tile-label" style={{ marginBottom: 10 }}>Синхронизация с Remnawave</div>
         <p class="page-subtitle" style={{ marginBottom: 12 }}>

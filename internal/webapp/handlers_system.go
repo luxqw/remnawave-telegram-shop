@@ -2,12 +2,36 @@ package webapp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
 
 	"remnawave-tg-shop-bot/internal/adminops"
+	"remnawave-tg-shop-bot/internal/config"
 )
+
+// handleSystemSettingsGet returns the current effective value of every admin-editable runtime
+// setting (decision 13b) — an override if one has been PATCHed in, else the .env default.
+func (h *Handler) handleSystemSettingsGet(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, config.RuntimeSettingsSnapshot())
+}
+
+// handleSystemSettingsPatch applies a partial update to the runtime settings whitelist. Body is a
+// flat {"KEY": "value"} map so the frontend can send only the fields the admin actually changed.
+func (h *Handler) handleSystemSettingsPatch(w http.ResponseWriter, r *http.Request) {
+	var updates map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	snapshot, err := h.ops.SetRuntimeSettings(r.Context(), updates, "webapi")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
 
 func (h *Handler) handleSystemSync(w http.ResponseWriter, r *http.Request) {
 	// Detach from the request context: sync can take a while and shouldn't be cancelled just

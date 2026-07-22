@@ -74,6 +74,14 @@ func main() {
 	webhookInboxRepository := database.NewWebhookInboxRepository(pool)
 	activityRepository := database.NewActivityRepository(pool)
 	notificationLogRepository := database.NewNotificationLogRepository(pool)
+	adminMessageRepository := database.NewAdminMessageRepository(pool)
+	botRuntimeSettingsRepository := database.NewBotRuntimeSettingsRepository(pool)
+
+	if storedSettings, err := botRuntimeSettingsRepository.FindAll(ctx); err != nil {
+		slog.Error("Failed to load runtime settings, using .env defaults only", "error", err)
+	} else {
+		config.ApplyRuntimeSettings(storedSettings)
+	}
 
 	remnawaveClient := remnawave.NewClient(config.RemnawaveUrl(), config.RemnawaveToken(), config.RemnawaveMode())
 
@@ -147,9 +155,9 @@ func main() {
 		defer deviceAddonGraceCron.Stop()
 	}
 
-	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, notificationLogRepository, remnawaveClient, syncService, b, tm)
+	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, notificationLogRepository, adminMessageRepository, botRuntimeSettingsRepository, remnawaveClient, syncService, b, tm)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, deviceAddonRepository, topupInputCache)
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, deviceAddonRepository, adminMessageRepository, topupInputCache)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
@@ -216,6 +224,11 @@ func main() {
 		return ok
 	}, h.TopupCustomAmountTextHandler, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 
+	// Registered last among text-message handlers: first-match-wins dispatch means this only ever
+	// sees a customer's free-text message once every more specific awaiting-input flow above (e.g.
+	// the custom top-up catcher just above) has already had first refusal.
+	b.RegisterHandlerMatchFunc(handler.IsCandidateAdminReply, h.AdminReplyMessageHandler, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+
 	mux := http.NewServeMux()
 	mux.Handle("/healthcheck", fullHealthHandler(pool, remnawaveClient))
 	if tributeClient != nil {
@@ -235,7 +248,7 @@ func main() {
 	if config.IsAdminWebAppEnabled() {
 		webappHandler := webapp.NewHandler(
 			customerRepository, purchaseRepository, referralRepository, auditLogRepository,
-			webhookInboxRepository, activityRepository, notificationLogRepository, remnawaveClient, tributeClient, rollypayWebhookClient, opsService,
+			webhookInboxRepository, activityRepository, notificationLogRepository, adminMessageRepository, botRuntimeSettingsRepository, remnawaveClient, tributeClient, rollypayWebhookClient, opsService,
 			subService, trafficSvc, pool,
 			webapp.BuildInfo{Version: Version, Commit: Commit, BuildDate: BuildDate},
 		)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { api, ApiError } from "../api/client";
-import type { UserDetail as UserDetailDTO, Purchase, AuditLogEntry, Referral, Page } from "../api/types";
+import type { UserDetail as UserDetailDTO, Purchase, AuditLogEntry, Referral, Page, AdminMessage } from "../api/types";
 import { GlassCard } from "../components/GlassCard";
 import { Badge } from "../components/Badge";
 import { ConfirmModal } from "../components/ConfirmModal";
@@ -27,7 +27,8 @@ export function UserDetail(props: { id: number }) {
   const [orders, setOrders] = useState<Page<Purchase> | null>(null);
   const [audit, setAudit] = useState<AuditLogEntry[] | null>(null);
   const [referrals, setReferrals] = useState<Referral[] | null>(null);
-  const [tab, setTab] = useState<"orders" | "audit" | "referrals">("orders");
+  const [messages, setMessages] = useState<AdminMessage[] | null>(null);
+  const [tab, setTab] = useState<"orders" | "audit" | "referrals" | "messages">("orders");
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [gbInput, setGbInput] = useState("10");
   const [daysInput, setDaysInput] = useState("30");
@@ -44,6 +45,7 @@ export function UserDetail(props: { id: number }) {
     if (tab === "orders") api.get<Page<Purchase>>(`/admin/api/users/${props.id}/orders`).then(setOrders);
     if (tab === "audit") api.get<AuditLogEntry[]>(`/admin/api/users/${props.id}/audit`).then(setAudit);
     if (tab === "referrals") api.get<Referral[]>(`/admin/api/users/${props.id}/referrals`).then(setReferrals);
+    if (tab === "messages") api.get<AdminMessage[]>(`/admin/api/users/${props.id}/messages`).then(setMessages);
   }, [tab, props.id, reloadTick]);
 
   const refreshAll = () => setReloadTick((t) => t + 1);
@@ -181,10 +183,33 @@ export function UserDetail(props: { id: number }) {
               <button class={`btn btn-sm ${tab === "orders" ? "btn-primary" : ""}`} onClick={() => setTab("orders")}>Заказы</button>
               <button class={`btn btn-sm ${tab === "audit" ? "btn-primary" : ""}`} onClick={() => setTab("audit")}>Аудит</button>
               <button class={`btn btn-sm ${tab === "referrals" ? "btn-primary" : ""}`} onClick={() => setTab("referrals")}>Рефералы</button>
+              <button class={`btn btn-sm ${tab === "messages" ? "btn-primary" : ""}`} onClick={() => setTab("messages")}>Сообщения</button>
             </div>
             {tab === "orders" && <DataTable columns={orderColumns} rows={orders?.items ?? []} keyFn={(p) => p.id} emptyMessage="Заказов нет" />}
             {tab === "audit" && <DataTable columns={auditColumns} rows={audit ?? []} keyFn={(e) => e.id} emptyMessage="Записей аудита нет" />}
             {tab === "referrals" && <DataTable columns={referralColumns} rows={referrals ?? []} keyFn={(r) => r.id} emptyMessage="Рефералов нет" />}
+            {tab === "messages" && (
+              <div class="stack">
+                {(messages ?? []).length === 0 && <div class="page-subtitle">Сообщений нет</div>}
+                {(messages ?? []).map((m) => (
+                  <div
+                    key={m.id}
+                    class="glass-card"
+                    style={{
+                      padding: "8px 12px",
+                      maxWidth: "80%",
+                      alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
+                      background: m.direction === "out" ? "var(--accent-soft, rgba(99,102,241,0.12))" : undefined,
+                    }}
+                  >
+                    <div class="page-subtitle" style={{ marginBottom: 4 }}>
+                      {m.direction === "out" ? "Админ" : "Клиент"} · {new Date(m.createdAt).toLocaleString("ru-RU")}
+                    </div>
+                    <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </GlassCard>
         </div>
 
