@@ -38,7 +38,17 @@ export function Orders() {
   };
 
   const columns: Column<Purchase>[] = [
-    { header: "ID", render: (p) => <span class="mono">{p.id}</span>, sortKey: "id", sortValue: (p) => p.id },
+    {
+      header: "ID",
+      render: (p) => (
+        <span class="mono" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          {p.id}
+          {p.isTest && <Badge variant="neutral">TEST</Badge>}
+        </span>
+      ),
+      sortKey: "id",
+      sortValue: (p) => p.id,
+    },
     {
       header: "Пользователь",
       render: (p) => <TelegramUserLink id={p.telegramId} username={p.username} />,
@@ -92,7 +102,7 @@ export function Orders() {
       </GlassCard>
       <DetailModal open={detail !== null} title={`Заказ #${detail?.id ?? ""}`} onClose={() => setDetail(null)} body={detail && (
         <div class="stack" style={{ gap: 6 }}>
-          <div class="data-card-row"><span class="data-card-label">ID</span><span class="data-card-value mono">{detail.id}</span></div>
+          <div class="data-card-row"><span class="data-card-label">ID</span><span class="data-card-value mono">{detail.id} {detail.isTest && <Badge variant="neutral">TEST</Badge>}</span></div>
           <div class="data-card-row"><span class="data-card-label">Пользователь</span><span class="data-card-value"><TelegramUserLink id={detail.telegramId} username={detail.username} /></span></div>
           <div class="data-card-row"><span class="data-card-label">Сумма</span><span class="data-card-value">{formatMoney(detail.amount, detail.currency)}</span></div>
           <div class="data-card-row"><span class="data-card-label">Месяцев</span><span class="data-card-value">{detail.month}</span></div>

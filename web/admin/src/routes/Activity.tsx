@@ -48,11 +48,14 @@ export function Activity() {
     },
     {
       header: "Событие",
-      render: (e) => (
-        <>
-          {TYPE_META[e.type].icon} {TYPE_META[e.type].label(e)}
-        </>
-      ),
+      render: (e) => {
+        const Icon = TYPE_META[e.type].icon;
+        return (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Icon size={16} /> {TYPE_META[e.type].label(e)}
+          </span>
+        );
+      },
       sortKey: "type",
       sortValue: (e) => e.type,
     },
