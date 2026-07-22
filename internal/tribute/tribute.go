@@ -208,7 +208,17 @@ func (c *Client) newSubscriptionHandler(ctx context.Context, wh SubscriptionWebh
 	if err != nil {
 		return err
 	}
-	return c.paymentService.ProcessPurchaseById(ctx, purchaseId)
+	if err := c.paymentService.ProcessPurchaseById(ctx, purchaseId); err != nil {
+		return err
+	}
+
+	// A genuine incoming Tribute webhook resets the optimistic-renewal streak cap (decision 9) —
+	// this customer's subscription is confirmed still actually being paid, not just assumed so by
+	// the cron. Best-effort: never fail the purchase over a bookkeeping column.
+	if err := c.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{"tribute_autorenew_streak": 0}); err != nil {
+		slog.Error("newSubscription: reset tribute autorenew streak failed", "customer_id", customer.ID, "error", err)
+	}
+	return nil
 }
 
 func (c *Client) handleTopupPayment(ctx context.Context, wh SubscriptionWebhook, pkg config.TopupPackageConfig) error {

@@ -496,6 +496,39 @@ func (s *Service) SetTrial(ctx context.Context, targetID int64, isTrial bool, so
 	return nil
 }
 
+// SetTributeAutorenewPaused is the manual reaction to decision 9's streak-cap alert (decision
+// 10): lets an admin immediately stop SubscriptionService's optimistic Tribute auto-renewal for
+// one customer once they've verified (or suspect) the subscription is no longer genuinely paid,
+// instead of updating the customer table by hand.
+func (s *Service) SetTributeAutorenewPaused(ctx context.Context, targetID int64, paused bool, source string) error {
+	param := 0
+	if paused {
+		param = 1
+	}
+	customer, err := s.customerRepository.FindByTelegramId(ctx, targetID)
+	if err != nil {
+		s.audit(ctx, "set_tribute_autorenew_paused", targetID, &param, err, source)
+		return err
+	}
+	if customer == nil {
+		wrapped := fmt.Errorf("%w: %d", ErrCustomerNotFound, targetID)
+		s.audit(ctx, "set_tribute_autorenew_paused", targetID, &param, wrapped, source)
+		return wrapped
+	}
+	if err := s.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{"tribute_autorenew_paused": paused}); err != nil {
+		s.audit(ctx, "set_tribute_autorenew_paused", targetID, &param, err, source)
+		return err
+	}
+	if paused {
+		s.notifyKey(ctx, targetID, "admin_tribute_autorenew_paused")
+	} else {
+		s.notifyKey(ctx, targetID, "admin_tribute_autorenew_resumed")
+	}
+	slog.Info("adminops: set_tribute_autorenew_paused", "telegram_id", targetID, "paused", paused, "source", source)
+	s.audit(ctx, "set_tribute_autorenew_paused", targetID, &param, nil, source)
+	return nil
+}
+
 // RunSync triggers a full Remnawave->bot-DB customer sync. Mirrors AdminPanelSyncCallback
 // exactly (fire-and-forget, no confirmation needed — it's non-destructive). Audit-logged like
 // every other adminops mutation even though the bot didn't log this before.

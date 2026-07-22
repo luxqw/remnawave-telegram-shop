@@ -6,14 +6,24 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"log/slog"
+	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/handler"
 	"remnawave-tg-shop-bot/internal/translation"
 	"time"
 )
 
+// tributeAutorenewStreakCap is decision 9's safety cap: after this many consecutive cron-driven
+// "optimistic" renewals with no fresh genuine Tribute webhook in between (reset in
+// tribute.Client.newSubscriptionHandler), ProcessSubscriptionExpiration stops auto-extending a
+// customer's access and alerts the admin instead — there's no way to ask Tribute's API whether the
+// subscription is still genuinely paid, so this bounds how long a lost cancellation webhook could
+// grant free access for.
+const tributeAutorenewStreakCap = 3
+
 type customerRepository interface {
 	FindByExpirationRange(ctx context.Context, startDate, endDate time.Time) (*[]database.Customer, error)
+	UpdateFields(ctx context.Context, id int64, updates map[string]interface{}) error
 }
 
 type tributeRepository interface {
@@ -122,6 +132,15 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 			if daysUntilExpiration > 1 {
 				continue
 			}
+			if customer.TributeAutorenewPaused {
+				slog.Info("Tribute optimistic renewal skipped: paused by admin", "customer_id", customer.ID)
+				continue
+			}
+			if customer.TributeAutorenewStreak >= tributeAutorenewStreakCap {
+				slog.Warn("Tribute optimistic renewal streak cap reached, alerting admin", "customer_id", customer.ID, "streak", customer.TributeAutorenewStreak)
+				s.notifyAdminStreakCap(ctx, customer)
+				continue
+			}
 			_, purchaseId, _, err := s.paymentService.CreatePurchase(ctx, p.Amount, p.Month, &customer, database.InvoiceTypeTribute)
 			if err != nil {
 				slog.Error("Failed to create tribute purchase", "error", err)
@@ -131,6 +150,11 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 			if err != nil {
 				slog.Error("Failed to process tribute purchase", "error", err)
 				continue
+			}
+			if streakErr := s.customerRepository.UpdateFields(ctx, customer.ID, map[string]interface{}{
+				"tribute_autorenew_streak": customer.TributeAutorenewStreak + 1,
+			}); streakErr != nil {
+				slog.Error("Failed to increment tribute autorenew streak", "customer_id", customer.ID, "error", streakErr)
 			}
 			slog.Info("Tribute purchase processed successfully", "purchase_id", purchaseId)
 			tributesProcessed[customer.ID] = true
@@ -165,6 +189,23 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 	slog.Info(fmt.Sprintf("Processed tributes customers %d with expiring subscriptions", len(tributesProcessed)))
 	slog.Info(fmt.Sprintf("Sent notifications to %d customers with expiring subscriptions", len(*customers)-len(tributesProcessed)))
 	return nil
+}
+
+// notifyAdminStreakCap alerts the admin once a customer's optimistic Tribute renewal streak trips
+// the cap — mirrors tribute.Client.notifyAdmin (not reused directly: this package would otherwise
+// need to import internal/tribute, which imports internal/payment, which is already imported
+// widely enough here that pulling in tribute risks a cycle for four lines of code).
+func (s *SubscriptionService) notifyAdminStreakCap(ctx context.Context, customer database.Customer) {
+	if s.telegramBot == nil {
+		return
+	}
+	text := fmt.Sprintf(
+		"⚠️ Tribute customer %d has been auto-renewed %d times with no fresh webhook — auto-renewal stopped, please verify manually.",
+		customer.TelegramID, customer.TributeAutorenewStreak,
+	)
+	if _, err := s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{ChatID: config.GetAdminTelegramId(), Text: text}); err != nil {
+		slog.Error("Failed to notify admin about tribute autorenew streak cap", "customer_id", customer.ID, "error", err)
+	}
 }
 
 func (s *SubscriptionService) getCustomersWithExpiringSubscriptions() (*[]database.Customer, error) {

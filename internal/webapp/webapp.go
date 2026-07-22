@@ -142,6 +142,7 @@ func (h *Handler) routes() http.Handler {
 	mux.HandleFunc("POST /admin/api/users/{id}/status", h.requireAdminSession(h.handleUserStatus))
 	mux.HandleFunc("POST /admin/api/users/{id}/extend", h.requireAdminSession(h.handleUserExtend))
 	mux.HandleFunc("POST /admin/api/users/{id}/trial", h.requireAdminSession(h.handleUserTrial))
+	mux.HandleFunc("POST /admin/api/users/{id}/tribute-autorenew", h.requireAdminSession(h.handleUserTributeAutorenew))
 	mux.HandleFunc("POST /admin/api/users/{id}/message", h.requireAdminSession(h.handleUserSendMessage))
 
 	// Broadcast

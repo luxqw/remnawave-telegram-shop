@@ -16,6 +16,7 @@ export interface Customer {
   language: string;
   isTrial: boolean;
   username?: string;
+  tributeAutorenewPaused: boolean;
 }
 
 export interface RemnawaveUser {

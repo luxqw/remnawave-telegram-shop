@@ -90,6 +90,8 @@
   "admin_topup_decrease": "📦 %d GB of traffic deducted.\n\nNew limit: %d GB.",
   "admin_trial_enabled": "🎁 Account switched to trial mode by an administrator.",
   "admin_trial_disabled": "📴 Account switched to a regular plan by an administrator.",
+  "admin_tribute_autorenew_paused": "⏸️ Subscription auto-renewal has been temporarily paused by an administrator — please contact support.",
+  "admin_tribute_autorenew_resumed": "▶️ Subscription auto-renewal has been resumed by an administrator.",
   "tribute_topup_user_not_found": "❌ Account not found in the panel. Please contact support.",
   "tribute_topup_unlimited": "ℹ️ You have an unlimited plan — extra traffic isn't needed. Contact support for a refund.",
   "tribute_topup_not_eligible": "❌ Account is not active. Please contact support.",

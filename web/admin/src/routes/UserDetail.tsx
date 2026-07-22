@@ -18,6 +18,7 @@ type PendingAction =
   | { kind: "topup"; gb: number; previewLimitGb: number | null }
   | { kind: "extend"; days: number }
   | { kind: "trial"; isTrial: boolean }
+  | { kind: "tribute-autorenew"; paused: boolean }
   | { kind: "message"; text: string };
 
 export function UserDetail(props: { id: number }) {
@@ -90,6 +91,10 @@ export function UserDetail(props: { id: number }) {
         case "trial":
           await api.post(`/admin/api/users/${props.id}/trial`, { isTrial: pending.isTrial });
           toast.push("Статус триала изменён");
+          break;
+        case "tribute-autorenew":
+          await api.post(`/admin/api/users/${props.id}/tribute-autorenew`, { paused: pending.paused });
+          toast.push(pending.paused ? "Автопродление Tribute приостановлено" : "Автопродление Tribute возобновлено");
           break;
         case "message":
           await api.post(`/admin/api/users/${props.id}/message`, { text: pending.text });
@@ -225,6 +230,14 @@ export function UserDetail(props: { id: number }) {
                 {customer.isTrial ? "Снять триал" : "Сделать триал"}
               </button>
 
+              <button
+                class={`btn btn-sm ${customer.tributeAutorenewPaused ? "" : "btn-danger"}`}
+                onClick={() => setPending({ kind: "tribute-autorenew", paused: !customer.tributeAutorenewPaused })}
+                title="Останавливает автопродление подписки Tribute по крону, если не приходят вебхуки от Tribute"
+              >
+                {customer.tributeAutorenewPaused ? "Возобновить автопродление Tribute" : "Приостановить автопродление Tribute"}
+              </button>
+
               <div class="field">
                 <label class="field-label">Сообщение пользователю</label>
                 <textarea
@@ -276,6 +289,8 @@ function confirmTitle(pending: PendingAction | null): string {
       return "Продлить подписку?";
     case "trial":
       return pending.isTrial ? "Сделать пользователя триальным?" : "Снять триальный статус?";
+    case "tribute-autorenew":
+      return pending.paused ? "Приостановить автопродление Tribute?" : "Возобновить автопродление Tribute?";
     case "message":
       return "Отправить сообщение пользователю?";
   }
@@ -301,6 +316,7 @@ function isDanger(pending: PendingAction | null): boolean {
     pending.kind === "reset-devices" ||
     pending.kind === "reset-traffic" ||
     (pending.kind === "status" && pending.status === "DISABLED") ||
-    (pending.kind === "topup" && pending.gb < 0)
+    (pending.kind === "topup" && pending.gb < 0) ||
+    (pending.kind === "tribute-autorenew" && pending.paused)
   );
 }
