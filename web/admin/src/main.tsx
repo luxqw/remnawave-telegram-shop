@@ -4,7 +4,7 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/components.css";
 
-import { getToken, setUnauthorizedHandler } from "./api/client";
+import { api, getToken, setToken, setUnauthorizedHandler } from "./api/client";
 import { login, initTelegramChrome } from "./auth/telegram";
 import { useRoute, type Route } from "./router";
 import { initSpotlight } from "./lib/spotlight";
@@ -82,10 +82,28 @@ function App() {
     setUnauthorizedHandler(() => setAuth({ status: "error", message: "Сессия истекла. Перезайдите." }));
 
     (async () => {
+      // A "🔗 Открыть в браузере" link from the bot's /admin command carries a ready-made session
+      // token (there's no Telegram.WebApp.initData to log in with outside a Mini App WebView) —
+      // see IssueAdminSessionToken/adminBrowserLink. Strip it from the URL immediately so it
+      // doesn't linger in browser history/reload links.
+      const url = new URL(window.location.href);
+      const linkToken = url.searchParams.get("token");
+      if (linkToken) {
+        setToken(linkToken);
+        url.searchParams.delete("token");
+        window.history.replaceState(null, "", url.toString());
+      }
+
       if (getToken()) {
-        // Already have a session from a previous load in this tab — trust it until an API call
-        // proves otherwise (the client's 401 handler will flip us back to the error state).
-        setAuth({ status: "ready", adminId: 0 });
+        // Already have a session (from the branch above, or a previous load in this tab) — trust
+        // it until an API call proves otherwise (the client's 401 handler will flip us back to
+        // the error state).
+        try {
+          const me = await api.get<{ telegramId: number }>("/admin/api/auth/me");
+          setAuth({ status: "ready", adminId: me.telegramId });
+        } catch {
+          setAuth({ status: "ready", adminId: 0 });
+        }
         return;
       }
       try {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"remnawave-tg-shop-bot/internal/adminsession"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
 )
@@ -53,7 +54,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ttl := time.Duration(config.AdminSessionTTLMinutes()) * time.Minute
-	token, err := issueSessionToken(config.AdminWebAppJWTSecret(), user.ID, ttl)
+	token, err := adminsession.Issue(config.AdminWebAppJWTSecret(), user.ID, ttl)
 	if err != nil {
 		slog.Error("webapp login: issue session token", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to issue session")

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"remnawave-tg-shop-bot/internal/adminsession"
 	"remnawave-tg-shop-bot/internal/config"
 )
 
@@ -32,7 +33,7 @@ func (h *Handler) requireAdminSession(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		claims, err := verifySessionToken(config.AdminWebAppJWTSecret(), token)
+		claims, err := adminsession.Verify(config.AdminWebAppJWTSecret(), token)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "invalid or expired session")
 			return

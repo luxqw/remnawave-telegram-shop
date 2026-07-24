@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -22,11 +23,19 @@ import (
 func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	callback := update.CallbackQuery.Message.Message
 	langCode := update.CallbackQuery.From.LanguageCode
+	h.showBuyMenu(ctx, b, callback.Chat.ID, callback.ID, langCode)
+}
 
+// showBuyMenu renders the month/price picker (or the payment_unavailable screen when RollyPay is
+// off). Shared by BuyCallbackHandler and PaymentCancelCallbackHandler — cancelling a pending
+// purchase used to hardcode the pricing_info text with just a bare back button and no actual
+// price buttons, a dead end masquerading as "start over". Routing both through the same builder
+// means they can't diverge like that again.
+func (h Handler) showBuyMenu(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string) {
 	if !config.IsRollyPayEnabled() {
 		_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
-			ChatID:    callback.Chat.ID,
-			MessageID: callback.ID,
+			ChatID:    chatID,
+			MessageID: messageID,
 			ParseMode: models.ParseModeHTML,
 			Text:      h.translation.GetText(langCode, "payment_unavailable"),
 			ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
@@ -71,8 +80,8 @@ func (h Handler) BuyCallbackHandler(ctx context.Context, b *bot.Bot, update *mod
 	})
 
 	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    callback.Chat.ID,
-		MessageID: callback.ID,
+		ChatID:    chatID,
+		MessageID: messageID,
 		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: models.InlineKeyboardMarkup{
 			InlineKeyboard: keyboard,
@@ -136,9 +145,13 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 
 	// chargedAmount may exceed price: createRollyPayInvoice folds an active bundled device addon's
 	// renewal cost into the subscription invoice (decision 2), and the summary must show what's
-	// actually being charged, not the bare subscription price.
+	// actually being charged, not the bare subscription price. A bare bigger number with no
+	// explanation reads as a billing mistake, so break out the device-slot portion when present.
 	monthLabel := h.translation.GetText(langCode, fmt.Sprintf("month_%d", month))
 	summaryText := fmt.Sprintf(h.translation.GetText(langCode, "payment_summary"), monthLabel, int(chargedAmount))
+	if deviceSurcharge := int(math.Round(chargedAmount)) - price; deviceSurcharge > 0 {
+		summaryText += fmt.Sprintf(h.translation.GetText(langCode, "payment_summary_device_addon_note"), price, deviceSurcharge)
+	}
 
 	message, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      callback.Chat.ID,
@@ -214,18 +227,7 @@ func (h Handler) PaymentCancelCallbackHandler(ctx context.Context, b *bot.Bot, u
 			}
 		}
 	}
-	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    callback.Chat.ID,
-		MessageID: callback.ID,
-		ParseMode: models.ParseModeHTML,
-		Text:      h.translation.GetText(langCode, "pricing_info"),
-		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
-			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackBuy)},
-		}},
-	})
-	if err != nil {
-		slog.Error("payment cancel: edit message", "error", err)
-	}
+	h.showBuyMenu(ctx, b, callback.Chat.ID, callback.ID, langCode)
 }
 
 func parseCallbackData(data string) map[string]string {

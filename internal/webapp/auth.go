@@ -3,7 +3,6 @@ package webapp
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -86,59 +85,5 @@ func verifyInitData(initData, botToken string, maxAge time.Duration) (TelegramUs
 	return user, nil
 }
 
-// sessionClaims is the payload of an admin session token. Not a spec-compliant JWT — a single
-// claim doesn't justify pulling in a JWT library — but the same shape:
-// base64url(payload).base64url(HMAC-SHA256(payload)).
-type sessionClaims struct {
-	Sub int64 `json:"sub"`
-	Iat int64 `json:"iat"`
-	Exp int64 `json:"exp"`
-}
-
-// issueSessionToken creates a signed session token for the given Telegram user ID, valid for ttl.
-func issueSessionToken(secret string, sub int64, ttl time.Duration) (string, error) {
-	now := time.Now()
-	claims := sessionClaims{Sub: sub, Iat: now.Unix(), Exp: now.Add(ttl).Unix()}
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		return "", fmt.Errorf("marshal claims: %w", err)
-	}
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
-
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(payloadB64))
-	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-
-	return payloadB64 + "." + sig, nil
-}
-
-// verifySessionToken checks the signature and expiry of a session token issued by
-// issueSessionToken. It does NOT check claims.Sub against the configured admin ID — callers
-// (requireAdminSession) must do that themselves so a config change invalidates old tokens
-// immediately, not just at their natural expiry.
-func verifySessionToken(secret, token string) (sessionClaims, error) {
-	parts := strings.SplitN(token, ".", 2)
-	if len(parts) != 2 {
-		return sessionClaims{}, errors.New("malformed token")
-	}
-
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(parts[0]))
-	expectedSig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(expectedSig), []byte(parts[1])) {
-		return sessionClaims{}, errors.New("invalid signature")
-	}
-
-	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return sessionClaims{}, fmt.Errorf("decode payload: %w", err)
-	}
-	var claims sessionClaims
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return sessionClaims{}, fmt.Errorf("unmarshal claims: %w", err)
-	}
-	if time.Now().Unix() > claims.Exp {
-		return sessionClaims{}, errors.New("token expired")
-	}
-	return claims, nil
-}
+// Session token issuance/verification moved to internal/adminsession (see its doc comment) so
+// internal/handler can mint one too, without an import cycle back through internal/notification.

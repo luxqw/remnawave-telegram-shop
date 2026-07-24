@@ -3,10 +3,14 @@ package handler
 import (
 	"context"
 	"log/slog"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"remnawave-tg-shop-bot/internal/adminsession"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/translation"
 )
@@ -35,19 +39,46 @@ func sendAdminPanel(ctx context.Context, b *bot.Bot, chatID int64) {
 		return
 	}
 
+	keyboard := [][]models.InlineKeyboardButton{
+		{translation.ButtonData{Text: "🌐 Открыть панель"}.InlineWebApp(webAppURL)},
+	}
+	// A Mini App WebView has no real address bar or devtools (Telegram Desktop's own "Open in
+	// browser" option isn't available for every button/build), which makes bugs like a stale
+	// cached bundle hard to diagnose from inside it. This second button sends the SAME panel as a
+	// plain URL Telegram opens in the system browser — the session token is minted directly via
+	// adminsession.Issue since a real browser has no Telegram.WebApp.initData to log in with.
+	if browserLink, err := adminBrowserLink(webAppURL); err != nil {
+		slog.Error("admin panel: issue browser session token", "error", err)
+	} else {
+		keyboard = append(keyboard, []models.InlineKeyboardButton{
+			translation.ButtonData{Text: "🔗 Открыть в браузере"}.InlineURL(browserLink),
+		})
+	}
+
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    chatID,
-		Text:      "🛠 <b>Панель администратора</b>",
-		ParseMode: models.ParseModeHTML,
-		ReplyMarkup: models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{translation.ButtonData{Text: "🌐 Открыть панель"}.InlineWebApp(webAppURL)},
-			},
-		},
+		ChatID:      chatID,
+		Text:        "🛠 <b>Панель администратора</b>",
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: keyboard},
 	})
 	if err != nil {
 		slog.Error("admin panel: send menu", "error", err)
 	}
+}
+
+// adminBrowserLink mints a fresh session token and appends it to webAppURL as a query param the
+// frontend picks up on load (see main.tsx) in place of the initData login exchange.
+func adminBrowserLink(webAppURL string) (string, error) {
+	ttl := time.Duration(config.AdminSessionTTLMinutes()) * time.Minute
+	token, err := adminsession.Issue(config.AdminWebAppJWTSecret(), config.GetAdminTelegramId(), ttl)
+	if err != nil {
+		return "", err
+	}
+	sep := "?"
+	if strings.Contains(webAppURL, "?") {
+		sep = "&"
+	}
+	return webAppURL + sep + "token=" + url.QueryEscape(token), nil
 }
 
 // AdminMenuCommandHandler handles /admin — opens the admin web panel.

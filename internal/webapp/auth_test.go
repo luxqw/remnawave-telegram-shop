@@ -139,53 +139,5 @@ func TestVerifyInitData(t *testing.T) {
 	}
 }
 
-func TestSessionTokenRoundTrip(t *testing.T) {
-	secret := "session-secret"
-
-	token, err := issueSessionToken(secret, 42, time.Hour)
-	if err != nil {
-		t.Fatalf("issueSessionToken: %v", err)
-	}
-
-	claims, err := verifySessionToken(secret, token)
-	if err != nil {
-		t.Fatalf("verifySessionToken: %v", err)
-	}
-	if claims.Sub != 42 {
-		t.Errorf("claims.Sub = %d, want 42", claims.Sub)
-	}
-}
-
-func TestVerifySessionToken(t *testing.T) {
-	secret := "session-secret"
-	validToken, err := issueSessionToken(secret, 42, time.Hour)
-	if err != nil {
-		t.Fatalf("issueSessionToken: %v", err)
-	}
-	expiredToken, err := issueSessionToken(secret, 42, -time.Hour)
-	if err != nil {
-		t.Fatalf("issueSessionToken: %v", err)
-	}
-
-	tests := []struct {
-		name    string
-		secret  string
-		token   string
-		wantErr bool
-	}{
-		{name: "valid token", secret: secret, token: validToken},
-		{name: "wrong secret", secret: "other-secret", token: validToken, wantErr: true},
-		{name: "expired token", secret: secret, token: expiredToken, wantErr: true},
-		{name: "malformed token", secret: secret, token: "not-a-token", wantErr: true},
-		{name: "tampered signature", secret: secret, token: validToken[:len(validToken)-2] + "xx", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := verifySessionToken(tt.secret, tt.token)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("verifySessionToken() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
+// Session token round-trip/verify tests moved to internal/adminsession/token_test.go along with
+// the code they exercise (see auth.go's comment on why it moved).
