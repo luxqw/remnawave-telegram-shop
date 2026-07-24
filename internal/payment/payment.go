@@ -254,14 +254,17 @@ func (s PaymentService) createConnectKeyboard(customer *database.Customer) [][]m
 	return inlineCustomerKeyboard
 }
 
-func (s PaymentService) CreatePurchase(ctx context.Context, amount float64, months int, customer *database.Customer, invoiceType database.InvoiceType) (url string, purchaseId int64, chargedAmount float64, err error) {
+// CreatePurchase's deviceSlotCount return is the number of device slots folded into this specific
+// invoice's charge (0 if none) — lets callers tell the customer exactly how many slots the
+// "renewal also covers a device addon" surcharge is for, instead of just a bare RUB amount.
+func (s PaymentService) CreatePurchase(ctx context.Context, amount float64, months int, customer *database.Customer, invoiceType database.InvoiceType) (url string, purchaseId int64, chargedAmount float64, deviceSlotCount int, err error) {
 	switch invoiceType {
 	case database.InvoiceTypeTribute:
 		return s.createTributeInvoice(ctx, amount, months, customer)
 	case database.InvoiceTypeRollyPay:
 		return s.createRollyPayInvoice(ctx, amount, months, customer)
 	default:
-		return "", 0, 0, fmt.Errorf("unknown invoice type: %s", invoiceType)
+		return "", 0, 0, 0, fmt.Errorf("unknown invoice type: %s", invoiceType)
 	}
 }
 
@@ -351,7 +354,7 @@ func (s PaymentService) CancelTributePurchase(ctx context.Context, telegramId in
 	return nil
 }
 
-func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float64, months int, customer *database.Customer) (url string, purchaseId int64, chargedAmount float64, err error) {
+func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float64, months int, customer *database.Customer) (url string, purchaseId int64, chargedAmount float64, deviceSlotCount int, err error) {
 	// Bundled device addons ride the subscription renewal invoice as a single payment (decision 2
 	// of the device-addon plan) rather than a separate charge — Tribute-linked customers never
 	// reach here with a bundled addon, since DetermineDeviceAddonBillingMode forces them standalone.
@@ -368,6 +371,7 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 				effectiveCount = *addon.PendingDeviceCount
 			}
 			amount += float64(effectiveCount) * float64(config.DeviceSlotPriceRUB())
+			deviceSlotCount = effectiveCount
 		}
 	}
 
@@ -382,7 +386,7 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 	})
 	if err != nil {
 		slog.Error("Error creating purchase", "error", err)
-		return "", 0, 0, err
+		return "", 0, 0, 0, err
 	}
 
 	paymentResp, err := s.rollypayClient.CreatePayment(ctx, rollypay.CreatePaymentRequest{
@@ -396,7 +400,7 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 		if cancelErr := s.purchaseRepository.UpdateFields(ctx, purchaseId, map[string]interface{}{"status": database.PurchaseStatusCancel}); cancelErr != nil {
 			slog.Error("Error cancelling orphaned purchase", "error", cancelErr, "purchase_id", purchaseId)
 		}
-		return "", 0, 0, err
+		return "", 0, 0, 0, err
 	}
 
 	updates := map[string]interface{}{
@@ -408,10 +412,10 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 	err = s.purchaseRepository.UpdateFields(ctx, purchaseId, updates)
 	if err != nil {
 		slog.Error("Error updating purchase", "error", err)
-		return "", 0, 0, err
+		return "", 0, 0, 0, err
 	}
 
-	return paymentResp.PayURL, purchaseId, amount, nil
+	return paymentResp.PayURL, purchaseId, amount, deviceSlotCount, nil
 }
 
 func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (string, error) {
@@ -447,7 +451,9 @@ func (s PaymentService) ActivateTrial(ctx context.Context, telegramId int64) (st
 
 }
 
-func (s PaymentService) createTributeInvoice(ctx context.Context, amount float64, months int, customer *database.Customer) (url string, purchaseId int64, chargedAmount float64, err error) {
+func (s PaymentService) createTributeInvoice(ctx context.Context, amount float64, months int, customer *database.Customer) (url string, purchaseId int64, chargedAmount float64, deviceSlotCount int, err error) {
+	// Tribute never bundles a device addon into this charge — Tribute-linked customers are always
+	// standalone-billed (DetermineDeviceAddonBillingMode), so deviceSlotCount is always 0 here.
 	purchaseId, err = s.purchaseRepository.Create(ctx, &database.Purchase{
 		InvoiceType: database.InvoiceTypeTribute,
 		Status:      database.PurchaseStatusPending,
@@ -458,10 +464,10 @@ func (s PaymentService) createTributeInvoice(ctx context.Context, amount float64
 	})
 	if err != nil {
 		slog.Error("Error creating purchase", "error", err)
-		return "", 0, 0, err
+		return "", 0, 0, 0, err
 	}
 
-	return "", purchaseId, amount, nil
+	return "", purchaseId, amount, 0, nil
 }
 
 // calculateRollover returns how many bytes of an existing admin topup remain unused

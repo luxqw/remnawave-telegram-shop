@@ -136,7 +136,7 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	}
 
 	ctxWithUsername := context.WithValue(ctx, remnawave.CtxKeyUsername, update.CallbackQuery.From.Username)
-	paymentURL, purchaseId, chargedAmount, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
+	paymentURL, purchaseId, chargedAmount, deviceSlotCount, err := h.paymentService.CreatePurchase(ctxWithUsername, float64(price), month, customer, invoiceType)
 	if err != nil {
 		slog.Error("Error creating payment", "error", err)
 		h.showPaymentError(ctx, b, callback.Chat.ID, callback.ID, langCode)
@@ -146,11 +146,12 @@ func (h Handler) PaymentCallbackHandler(ctx context.Context, b *bot.Bot, update 
 	// chargedAmount may exceed price: createRollyPayInvoice folds an active bundled device addon's
 	// renewal cost into the subscription invoice (decision 2), and the summary must show what's
 	// actually being charged, not the bare subscription price. A bare bigger number with no
-	// explanation reads as a billing mistake, so break out the device-slot portion when present.
+	// explanation reads as a billing mistake, so break out the device-slot portion (and how many
+	// slots it's actually for — a RUB amount alone doesn't answer "how many?") when present.
 	monthLabel := h.translation.GetText(langCode, fmt.Sprintf("month_%d", month))
 	summaryText := fmt.Sprintf(h.translation.GetText(langCode, "payment_summary"), monthLabel, int(chargedAmount))
-	if deviceSurcharge := int(math.Round(chargedAmount)) - price; deviceSurcharge > 0 {
-		summaryText += fmt.Sprintf(h.translation.GetText(langCode, "payment_summary_device_addon_note"), price, deviceSurcharge)
+	if deviceSurcharge := int(math.Round(chargedAmount)) - price; deviceSurcharge > 0 && deviceSlotCount > 0 {
+		summaryText += fmt.Sprintf(h.translation.GetText(langCode, "payment_summary_device_addon_note"), price, deviceSurcharge, deviceSlotCount)
 	}
 
 	message, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{

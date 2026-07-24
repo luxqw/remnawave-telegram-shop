@@ -51,7 +51,17 @@ func (h Handler) deviceBuyRow(langCode string, isTrial bool) []models.InlineKeyb
 // a plain constant rather than a config knob.
 const maxPaidDeviceSlots = 20
 
-// deviceManageRow returns the "manage slots" entry-point button — same eligibility gate as
+// baseDeviceSlots is the free device allowance included in every plan (see the greeting's "До 5
+// устройств на одной подписке"). Displayed as a plain constant rather than derived from
+// Remnawave's live HwidDeviceLimit minus device_addons.DeviceCount: that subtraction is only as
+// good as device_addons staying in perfect sync with Remnawave, and drifts on any account that's
+// been hand-adjusted outside the normal buy/decrease flow (e.g. an admin panel reset) — showing a
+// wrong "base" then looks like this bot doesn't know its own plan. The actual limit enforcement
+// is untouched by this: buy/decrease still work in relative deltas off Remnawave's live number
+// (see DeviceLimitAfterDecrease), this constant is display-only.
+const baseDeviceSlots = 5
+
+// deviceManageRow returns the "change slot count" entry-point button — same eligibility gate as
 // deviceBuyRow (RollyPay enabled, not a trial), since decreasing is just as much a paid-plan-only
 // concept as buying: a trial customer has no addon to decrease in the first place.
 func (h Handler) deviceManageRow(langCode string, isTrial bool) []models.InlineKeyboardButton {
@@ -61,6 +71,20 @@ func (h Handler) deviceManageRow(langCode string, isTrial bool) []models.InlineK
 	return []models.InlineKeyboardButton{
 		{Text: h.translation.GetText(langCode, "device_manage_button"), CallbackData: CallbackDeviceManage},
 	}
+}
+
+// deviceSlotBreakdown is the single source of the paid/total/pending-note numbers shown on both
+// the devices list and (in a slimmer form) the manage-slots prompt — computed once here so the
+// two screens can't drift into showing different numbers for the same account.
+func (h Handler) deviceSlotBreakdown(langCode string, addon *database.DeviceAddon) (paid, total int, pendingNote string) {
+	if addon != nil && addon.Status != database.AddonStatusExpired {
+		paid = addon.DeviceCount
+	}
+	total = baseDeviceSlots + paid
+	if addon != nil && addon.PendingDeviceCount != nil {
+		pendingNote = fmt.Sprintf(h.translation.GetText(langCode, "device_decrease_pending_note"), *addon.PendingDeviceCount)
+	}
+	return paid, total, pendingNote
 }
 
 func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string, telegramID int64, isTrial bool) {
@@ -89,8 +113,10 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 		addon = nil
 	}
 
+	paid, total, pendingNote := h.deviceSlotBreakdown(langCode, addon)
+
 	if len(devices) == 0 {
-		text := h.translation.GetText(langCode, "devices_empty")
+		text := fmt.Sprintf(h.translation.GetText(langCode, "devices_empty"), total, paid) + pendingNote
 		var rows [][]models.InlineKeyboardButton
 		if config.GetMiniAppURL() != "" {
 			rows = append(rows, []models.InlineKeyboardButton{
@@ -112,14 +138,12 @@ func (h Handler) showDevicesList(ctx context.Context, b *bot.Bot, chatID int64, 
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(h.translation.GetText(langCode, "devices_list_header"), len(devices)))
+	sb.WriteString(fmt.Sprintf(h.translation.GetText(langCode, "devices_list_header"), total, paid, len(devices)))
 	for i, d := range devices {
 		sb.WriteString(fmt.Sprintf("<b>%d.</b> %s\n", i+1, buildDeviceDescription(langCode, h.translation, i, d)))
 	}
 	sb.WriteString(h.translation.GetText(langCode, "devices_list_footer"))
-	if addon != nil && addon.PendingDeviceCount != nil {
-		sb.WriteString(fmt.Sprintf(h.translation.GetText(langCode, "device_decrease_pending_note"), *addon.PendingDeviceCount))
-	}
+	sb.WriteString(pendingNote)
 
 	// Buy row goes first, right under the header — otherwise it gets buried below one delete
 	// button per connected device and is easy to miss once a customer has more than 1-2 devices.
@@ -253,50 +277,27 @@ func (h Handler) DevicesResetConfirmCallbackHandler(ctx context.Context, b *bot.
 	slog.Info("devices: all hwid devices deleted", "telegram_id", telegramID)
 }
 
-// DeviceManageCallbackHandler is the single entry point for exact slot-count control: shows the
-// full breakdown (base/paid/total/connected) so the customer actually understands what they have,
-// then prompts for a typed target count of PAID slots. Replaces separate +1/-1 buttons, which
-// showed neither the base-allowance floor nor the total picture.
+// DeviceManageCallbackHandler is the single entry point for exact slot-count control: prompts for
+// a typed target count of PAID slots. The base/total/connected breakdown already lives on the
+// devices list this is opened from (deviceSlotBreakdown) — repeating it here was the exact
+// "connected count shown in two places" duplication that made the old two-screen split confusing,
+// so this prompt only asks the one new question: how many purchased slots to have.
 func (h Handler) DeviceManageCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	telegramID := update.CallbackQuery.From.ID
 	langCode := update.CallbackQuery.From.LanguageCode
 	msg := update.CallbackQuery.Message.Message
-
-	rwUsers, err := h.remnawaveClient.GetUsersByTelegramID(ctx, telegramID)
-	if err != nil || len(rwUsers) == 0 {
-		slog.Error("device manage: find remnawave user", "telegram_id", telegramID, "error", err)
-		return
-	}
-	rwUser := rwUsers[0]
-	totalLimit := 0
-	if rwUser.HwidDeviceLimit != nil {
-		totalLimit = *rwUser.HwidDeviceLimit
-	}
 
 	addon, err := h.deviceAddonRepository.FindActiveByTelegramID(ctx, telegramID)
 	if err != nil {
 		slog.Warn("device manage: find device addon failed", "error", err)
 		addon = nil
 	}
-	paid := 0
-	if addon != nil && addon.Status != database.AddonStatusExpired {
-		paid = addon.DeviceCount
-	}
-	base := totalLimit - paid
-	if base < 0 {
-		base = 0
-	}
+	paid, _, pendingNote := h.deviceSlotBreakdown(langCode, addon)
 
-	connected := 0
-	if devices, devErr := h.remnawaveClient.GetUserHwidDevices(ctx, rwUser.UUID); devErr == nil {
-		connected = len(devices)
-	}
-
-	text := fmt.Sprintf(h.translation.GetText(langCode, "device_manage_prompt"), base, paid, totalLimit, connected, maxPaidDeviceSlots)
+	text := fmt.Sprintf(h.translation.GetText(langCode, "device_manage_prompt"), paid, maxPaidDeviceSlots) + pendingNote
 
 	var rows [][]models.InlineKeyboardButton
 	if addon != nil && addon.PendingDeviceCount != nil {
-		text += fmt.Sprintf(h.translation.GetText(langCode, "device_decrease_pending_note"), *addon.PendingDeviceCount)
 		undoLabel := fmt.Sprintf(h.translation.GetText(langCode, "device_decrease_undo_button"), *addon.PendingDeviceCount)
 		rows = append(rows, []models.InlineKeyboardButton{{Text: undoLabel, CallbackData: CallbackDeviceDecreaseUndo}})
 	}

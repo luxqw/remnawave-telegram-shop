@@ -31,7 +31,7 @@ type tributeRepository interface {
 }
 
 type paymentProcessor interface {
-	CreatePurchase(ctx context.Context, amount float64, months int, customer *database.Customer, invoiceType database.InvoiceType) (string, int64, float64, error)
+	CreatePurchase(ctx context.Context, amount float64, months int, customer *database.Customer, invoiceType database.InvoiceType) (string, int64, float64, int, error)
 	ProcessPurchaseById(ctx context.Context, purchaseId int64) error
 }
 
@@ -141,7 +141,7 @@ func (s *SubscriptionService) ProcessSubscriptionExpiration() error {
 				s.notifyAdminStreakCap(ctx, customer)
 				continue
 			}
-			_, purchaseId, _, err := s.paymentService.CreatePurchase(ctx, p.Amount, p.Month, &customer, database.InvoiceTypeTribute)
+			_, purchaseId, _, _, err := s.paymentService.CreatePurchase(ctx, p.Amount, p.Month, &customer, database.InvoiceTypeTribute)
 			if err != nil {
 				slog.Error("Failed to create tribute purchase", "error", err)
 				continue
