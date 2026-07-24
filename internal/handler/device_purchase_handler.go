@@ -140,6 +140,11 @@ func (h Handler) DeviceBuyCallbackHandler(ctx context.Context, b *bot.Bot, updat
 		Text:        disclaimer,
 		ReplyMarkup: h.payOrCancelKeyboard(langCode, paymentResp.PayURL, fmt.Sprintf("%s?id=%d", CallbackDeviceCancel, topupID)),
 	})
+	// Lets rollypay.WebhookClient delete this Pay/Cancel message on completion instead of leaving
+	// it stuck on screen next to the success notice (mirrors the subscription flow's cache.Set in
+	// payment_handlers.go). The invoice is an edit of the message already at msg.ID, so that's also
+	// its final message ID.
+	h.deviceTopupInvoiceCache.Set(topupID, msg.ID)
 }
 
 // DeviceCancelCallbackHandler cancels a stuck pending device-slot purchase, mirroring

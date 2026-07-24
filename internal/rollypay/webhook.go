@@ -17,6 +17,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"remnawave-tg-shop-bot/internal/cache"
 	"remnawave-tg-shop-bot/internal/config"
 	"remnawave-tg-shop-bot/internal/database"
 	"remnawave-tg-shop-bot/internal/remnawave"
@@ -48,6 +49,12 @@ type WebhookClient struct {
 	remnawaveClient       *remnawave.Client
 	telegramBot           *bot.Bot
 	translation           *translation.Manager
+	// topupInvoiceCache/deviceTopupInvoiceCache mirror handler.Handler's fields of the same name
+	// (topupID/deviceTopupID -> invoice message ID) — set when the invoice is created, read here to
+	// delete that Pay/Cancel message once the purchase completes instead of leaving it stuck on
+	// screen next to the success notice.
+	topupInvoiceCache       *cache.Cache
+	deviceTopupInvoiceCache *cache.Cache
 }
 
 func NewWebhookClient(
@@ -62,19 +69,23 @@ func NewWebhookClient(
 	remnawaveClient *remnawave.Client,
 	telegramBot *bot.Bot,
 	translationManager *translation.Manager,
+	topupInvoiceCache *cache.Cache,
+	deviceTopupInvoiceCache *cache.Cache,
 ) *WebhookClient {
 	return &WebhookClient{
-		payments:              payments,
-		paymentService:        paymentService,
-		purchaseRepository:    purchaseRepository,
-		customerRepository:    customerRepository,
-		topupRepository:       topupRepository,
-		deviceTopupRepository: deviceTopupRepository,
-		deviceAddonRepository: deviceAddonRepository,
-		webhookInbox:          webhookInbox,
-		remnawaveClient:       remnawaveClient,
-		telegramBot:           telegramBot,
-		translation:           translationManager,
+		payments:                payments,
+		paymentService:          paymentService,
+		purchaseRepository:      purchaseRepository,
+		customerRepository:      customerRepository,
+		topupRepository:         topupRepository,
+		deviceTopupRepository:   deviceTopupRepository,
+		deviceAddonRepository:   deviceAddonRepository,
+		webhookInbox:            webhookInbox,
+		remnawaveClient:         remnawaveClient,
+		telegramBot:             telegramBot,
+		translation:             translationManager,
+		topupInvoiceCache:       topupInvoiceCache,
+		deviceTopupInvoiceCache: deviceTopupInvoiceCache,
 	}
 }
 
@@ -248,7 +259,7 @@ func (c *WebhookClient) handleTopupPaid(ctx context.Context, orderID, paymentID 
 	}
 
 	newLimitGB := int(targetBytes) / config.BytesInGigabyte()
-	c.notifyUserKey(ctx, t.TelegramID, "tribute_topup_success", t.GBAmount, newLimitGB)
+	c.finishInvoiceMessage(ctx, c.topupInvoiceCache, id, t.TelegramID, "tribute_topup_success", t.GBAmount, newLimitGB)
 	slog.Info("rollypay topup: completed", "telegram_id", t.TelegramID, "gb_amount", t.GBAmount, "new_limit_gb", newLimitGB)
 	return nil
 }
@@ -301,7 +312,7 @@ func (c *WebhookClient) handleDevicePaid(ctx context.Context, orderID, paymentID
 		slog.Error("device topup: mark completed failed (remnawave already updated)", "error", err, "device_topup_id", id)
 	}
 
-	c.notifyUserKey(ctx, t.TelegramID, "device_topup_success", targetLimit)
+	c.finishInvoiceMessage(ctx, c.deviceTopupInvoiceCache, id, t.TelegramID, "device_topup_success", targetLimit)
 	slog.Info("rollypay device topup: completed", "telegram_id", t.TelegramID, "new_limit", targetLimit)
 
 	// Best-effort: the Remnawave HWID bump above is the source of truth and must never be retried
@@ -436,6 +447,49 @@ func (c *WebhookClient) handleNotPaid(ctx context.Context, orderID string) error
 	default:
 		slog.Warn("rollypay webhook: unrecognized order_id prefix on non-paid event", "order_id", orderID)
 		return nil
+	}
+}
+
+// finishInvoiceMessage deletes the pending invoice's Pay/Cancel message (if its ID was cached when
+// the invoice was created — see handler.Handler's topupInvoiceCache/deviceTopupInvoiceCache) and
+// sends the completion notice as a fresh message with a back-to-menu button, mirroring the
+// subscription flow's ProcessPurchaseById (payment.go): that flow deletes the old invoice and
+// sends a proper follow-up, while a bare notifyUserKey left the Pay/Cancel buttons stuck on screen
+// forever with no way back to the menu.
+func (c *WebhookClient) finishInvoiceMessage(ctx context.Context, invoiceCache *cache.Cache, invoiceID, telegramID int64, key string, args ...any) {
+	if messageID, ok := invoiceCache.Get(invoiceID); ok {
+		invoiceCache.Delete(invoiceID)
+		if _, err := c.telegramBot.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: telegramID, MessageID: messageID}); err != nil {
+			slog.Error("rollypay webhook: delete invoice message", "telegram_id", telegramID, "error", err)
+		}
+	}
+
+	if c.translation == nil || c.telegramBot == nil {
+		return
+	}
+
+	langCode := ""
+	if customer, err := c.customerRepository.FindByTelegramId(ctx, telegramID); err == nil && customer != nil {
+		langCode = customer.Language
+	}
+
+	text := c.translation.GetText(langCode, key)
+	if len(args) > 0 {
+		text = fmt.Sprintf(text, args...)
+	}
+	_, err := c.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    telegramID,
+		Text:      text,
+		ParseMode: models.ParseModeHTML,
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+			// "start" mirrors handler.CallbackStart's value — can't import the handler package's
+			// constant here (handler already imports rollypay, so the reverse would cycle); payment.go
+			// hardcodes the same literal for the same reason (see createConnectKeyboard).
+			{c.translation.GetButton(langCode, "back_button").InlineCallback("start")},
+		}},
+	})
+	if err != nil {
+		slog.Error("rollypay webhook: failed to send user message", "telegram_id", telegramID, "error", err)
 	}
 }
 

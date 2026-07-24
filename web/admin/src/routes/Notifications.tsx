@@ -35,11 +35,20 @@ export function Notifications() {
     if (status) params.set("status", status);
     if (from) params.set("from", from);
     if (to) params.set("to", to);
-    api.get<Page<NotificationLogEntry>>(`/admin/api/notifications?${params.toString()}`).then(setPage);
+    api
+      .get<Page<NotificationLogEntry>>(`/admin/api/notifications?${params.toString()}`)
+      .then(setPage)
+      .catch((err) => {
+        toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить уведомления", "error");
+        setPage({ items: [], total: 0, page: pageNum, limit: 30 });
+      });
   }, [pageNum, type, status, from, to, reloadTick]);
 
   useEffect(() => {
-    api.get<NotificationStats>("/admin/api/notifications/stats?days=7").then(setStats);
+    api
+      .get<NotificationStats>("/admin/api/notifications/stats?days=7")
+      .then(setStats)
+      .catch((err) => toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить статистику", "error"));
   }, [reloadTick]);
 
   const resend = async (n: NotificationLogEntry) => {

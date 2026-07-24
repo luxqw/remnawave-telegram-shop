@@ -63,6 +63,12 @@ func main() {
 		panic(err)
 	}
 	topupInputCache := cache.NewCache(3 * time.Minute)
+	// Separate from `cache` (the subscription purchaseId -> messageId map, defined next): TrafficTopup
+	// and DeviceTopup IDs come from their own DB sequences and can collide with purchase IDs (or each
+	// other) on the same int64 key within one shared map. Created before `cache` shadows the package
+	// name below.
+	topupInvoiceCache := cache.NewCache(30 * time.Minute)
+	deviceTopupInvoiceCache := cache.NewCache(30 * time.Minute)
 	cache := cache.NewCache(30 * time.Minute)
 	customerRepository := database.NewCustomerRepository(pool)
 	purchaseRepository := database.NewPurchaseRepository(pool)
@@ -146,7 +152,7 @@ func main() {
 	// (webhook route, retry cron, admin webapp) treats that as optional, same as tributeClient.
 	var rollypayWebhookClient *rollypay.WebhookClient
 	if config.IsRollyPayEnabled() {
-		rollypayWebhookClient = rollypay.NewWebhookClient(rollypayClient, paymentService, purchaseRepository, customerRepository, topupRepository, deviceTopupRepository, deviceAddonRepository, webhookInboxRepository, remnawaveClient, b, tm)
+		rollypayWebhookClient = rollypay.NewWebhookClient(rollypayClient, paymentService, purchaseRepository, customerRepository, topupRepository, deviceTopupRepository, deviceAddonRepository, webhookInboxRepository, remnawaveClient, b, tm, topupInvoiceCache, deviceTopupInvoiceCache)
 
 		deviceAddonRenewalSvc := notification.NewDeviceAddonRenewalService(deviceAddonRepository, rollypayClient, remnawaveClient, b, tm, notificationLogRepository)
 		deviceAddonRenewalCron := deviceAddonRenewalChecker(deviceAddonRenewalSvc)
@@ -160,7 +166,7 @@ func main() {
 
 	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, notificationLogRepository, adminMessageRepository, botRuntimeSettingsRepository, remnawaveClient, syncService, b, tm)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, deviceAddonRepository, adminMessageRepository, topupInputCache)
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, deviceAddonRepository, adminMessageRepository, topupInputCache, topupInvoiceCache, deviceTopupInvoiceCache)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {

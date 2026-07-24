@@ -29,6 +29,14 @@ type Handler struct {
 	// cache.Cache verbatim rather than a new type — same TTL-expiring-map shape already used for
 	// pending purchase message IDs elsewhere in this handler.
 	topupAwaitingInput *cache.Cache
+	// topupInvoiceCache/deviceTopupInvoiceCache map a pending TrafficTopup/DeviceTopup ID to its
+	// invoice message ID, mirroring the subscription flow's `cache` field (purchaseId -> messageId)
+	// so rollypay.WebhookClient can delete the stale Pay/Cancel message on completion instead of
+	// leaving it stuck on screen. Separate instances rather than reusing `cache`: TrafficTopup,
+	// DeviceTopup, and Purchase IDs come from different DB sequences and can collide on the same
+	// int64 key within one shared map.
+	topupInvoiceCache       *cache.Cache
+	deviceTopupInvoiceCache *cache.Cache
 }
 
 func NewHandler(
@@ -46,21 +54,25 @@ func NewHandler(
 	deviceAddonRepository *database.DeviceAddonRepository,
 	adminMessageRepository *database.AdminMessageRepository,
 	topupAwaitingInput *cache.Cache,
+	topupInvoiceCache *cache.Cache,
+	deviceTopupInvoiceCache *cache.Cache,
 ) *Handler {
 	return &Handler{
-		syncService:            syncService,
-		paymentService:         paymentService,
-		customerRepository:     customerRepository,
-		purchaseRepository:     purchaseRepository,
-		rollypayClient:         rollypayClient,
-		translation:            translation,
-		referralRepository:     referralRepository,
-		cache:                  cache,
-		remnawaveClient:        remnawaveClient,
-		topupRepository:        topupRepository,
-		deviceTopupRepository:  deviceTopupRepository,
-		deviceAddonRepository:  deviceAddonRepository,
-		adminMessageRepository: adminMessageRepository,
-		topupAwaitingInput:     topupAwaitingInput,
+		syncService:             syncService,
+		paymentService:          paymentService,
+		customerRepository:      customerRepository,
+		purchaseRepository:      purchaseRepository,
+		rollypayClient:          rollypayClient,
+		translation:             translation,
+		referralRepository:      referralRepository,
+		cache:                   cache,
+		remnawaveClient:         remnawaveClient,
+		topupRepository:         topupRepository,
+		deviceTopupRepository:   deviceTopupRepository,
+		deviceAddonRepository:   deviceAddonRepository,
+		adminMessageRepository:  adminMessageRepository,
+		topupAwaitingInput:      topupAwaitingInput,
+		topupInvoiceCache:       topupInvoiceCache,
+		deviceTopupInvoiceCache: deviceTopupInvoiceCache,
 	}
 }

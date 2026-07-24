@@ -191,6 +191,11 @@ func (h Handler) createTopupInvoice(ctx context.Context, b *bot.Bot, chatID int6
 		Text:        disclaimer,
 		ReplyMarkup: h.payOrCancelKeyboard(langCode, paymentResp.PayURL, fmt.Sprintf("%s?id=%d", CallbackTopupCancel, topupID)),
 	})
+	// Lets rollypay.WebhookClient delete this Pay/Cancel message on completion instead of leaving
+	// it stuck on screen next to the success notice (mirrors the subscription flow's cache.Set in
+	// payment_handlers.go). The invoice is an edit of the message already at messageID, so that's
+	// also its final message ID — no need to read EditMessageText's return value.
+	h.topupInvoiceCache.Set(topupID, messageID)
 }
 
 func (h Handler) showTopupError(ctx context.Context, b *bot.Bot, chatID int64, messageID int, langCode string) {

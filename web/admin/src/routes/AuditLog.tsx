@@ -1,14 +1,16 @@
 import { useEffect, useState } from "preact/hooks";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { AuditLogEntry, Page } from "../api/types";
 import { GlassCard } from "../components/GlassCard";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
 import { TelegramUserLink } from "../components/TelegramUserLink";
+import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
 
 export function AuditLog() {
+  const toast = useToast();
   const [page, setPage] = useState<Page<AuditLogEntry> | null>(null);
   const [pageNum, setPageNum] = useState(1);
   const [action, setAction] = useState("");
@@ -22,7 +24,13 @@ export function AuditLog() {
     if (debouncedAction) params.set("action", debouncedAction);
     if (outcome) params.set("outcome", outcome);
     if (debouncedTarget) params.set("target", debouncedTarget);
-    api.get<Page<AuditLogEntry>>(`/admin/api/audit?${params.toString()}`).then(setPage);
+    api
+      .get<Page<AuditLogEntry>>(`/admin/api/audit?${params.toString()}`)
+      .then(setPage)
+      .catch((err) => {
+        toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить аудит-лог", "error");
+        setPage({ items: [], total: 0, page: pageNum, limit: 30 });
+      });
   }, [pageNum, debouncedAction, outcome, debouncedTarget]);
 
   const columns: Column<AuditLogEntry>[] = [
