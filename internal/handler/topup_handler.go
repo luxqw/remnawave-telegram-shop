@@ -183,7 +183,8 @@ func (h Handler) createTopupInvoice(ctx context.Context, b *bot.Bot, chatID int6
 		return
 	}
 
-	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb, priceRUB)
+	baseGB := config.TrafficLimit() / config.BytesInGigabyte()
+	disclaimer := fmt.Sprintf(h.translation.GetText(langCode, "topup_disclaimer"), gb, priceRUB, baseGB)
 	_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      chatID,
 		MessageID:   messageID,

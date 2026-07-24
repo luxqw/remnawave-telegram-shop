@@ -1,9 +1,10 @@
 import { useEffect, useState } from "preact/hooks";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { ActivityEvent, Page } from "../api/types";
 import { GlassCard } from "../components/GlassCard";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
+import { useToast } from "../components/Toast";
 import { TYPE_META } from "../lib/activityMeta";
 import { navigate } from "../router";
 
@@ -17,6 +18,7 @@ const TYPES: { value: ActivityEvent["type"] | ""; label: string }[] = [
 ];
 
 export function Activity() {
+  const toast = useToast();
   const [page, setPage] = useState<Page<ActivityEvent> | null>(null);
   const [pageNum, setPageNum] = useState(1);
   const [type, setType] = useState("");
@@ -28,7 +30,13 @@ export function Activity() {
     if (type) params.set("type", type);
     if (from) params.set("from", from);
     if (to) params.set("to", to);
-    api.get<Page<ActivityEvent>>(`/admin/api/activity?${params.toString()}`).then(setPage);
+    api
+      .get<Page<ActivityEvent>>(`/admin/api/activity?${params.toString()}`)
+      .then(setPage)
+      .catch((err) => {
+        toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить активность", "error");
+        setPage({ items: [], total: 0, page: pageNum, limit: 30 });
+      });
   }, [pageNum, type, from, to]);
 
   const exportUrl = () => {

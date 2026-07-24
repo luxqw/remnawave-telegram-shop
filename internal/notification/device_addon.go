@@ -99,6 +99,12 @@ func (s *DeviceAddonRenewalService) ProcessRenewalReminders() error {
 		if s.alreadySentToday(ctx, addon.TelegramID, deviceAddonRenewalNotificationType) {
 			continue
 		}
+		// A decrease queued all the way to 0 leaves nothing to renew — sending a "pay 0 ₽" invoice
+		// would be nonsensical, so just let it lapse into the existing expiry path (which already
+		// shrinks the limit and trims excess devices) instead of charging for a renewal.
+		if addon.PendingDeviceCount != nil && *addon.PendingDeviceCount <= 0 {
+			continue
+		}
 		if err := s.sendRenewalPayLink(ctx, addon, "device_addon_renewal_reminder", deviceAddonRenewalNotificationType); err != nil {
 			slog.Error("device addon renewal: send reminder failed", "telegram_id", addon.TelegramID, "addon_id", addon.ID, "error", err)
 			continue
@@ -241,11 +247,18 @@ func (s *DeviceAddonRenewalService) trimExcessDevices(ctx context.Context, userU
 // given translation key — shared by the pre-expiry reminder and the grace-entry nudge, which
 // differ only in urgency wording and which notification_type they dedup against.
 func (s *DeviceAddonRenewalService) sendRenewalPayLink(ctx context.Context, addon *database.DeviceAddon, translationKey, notificationType string) error {
-	amount := float64(addon.DeviceCount) * float64(config.DeviceSlotPriceRUB())
+	// Charge/display the count that will actually be in effect once this invoice is paid (see
+	// applyPendingDeviceDecrease in rollypay/webhook.go's handleDeviceAddonRenewalPaid) — not the
+	// stale pre-decrease count, or the customer pays for a slot this invoice is about to remove.
+	effectiveCount := addon.DeviceCount
+	if addon.PendingDeviceCount != nil {
+		effectiveCount = *addon.PendingDeviceCount
+	}
+	amount := float64(effectiveCount) * float64(config.DeviceSlotPriceRUB())
 	paymentResp, err := s.rollypayClient.CreatePayment(ctx, rollypay.CreatePaymentRequest{
 		Amount:      fmt.Sprintf("%.2f", amount),
 		OrderID:     fmt.Sprintf("addon-%d", addon.ID),
-		Description: fmt.Sprintf("Device addon renewal x%d", addon.DeviceCount),
+		Description: fmt.Sprintf("Device addon renewal x%d", effectiveCount),
 		Test:        config.RollyPayTestMode() && addon.TelegramID == config.GetAdminTelegramId(),
 	})
 	if err != nil {
@@ -254,7 +267,7 @@ func (s *DeviceAddonRenewalService) sendRenewalPayLink(ctx context.Context, addo
 
 	// langCode "" falls back to the default language, matching rollypay/webhook.go's
 	// notifyUserKey — this cron only has the addon row, not the customer's stored preference.
-	text := fmt.Sprintf(s.tm.GetText("", translationKey), addon.DeviceCount, int(amount))
+	text := fmt.Sprintf(s.tm.GetText("", translationKey), effectiveCount, int(amount))
 	_, sendErr := s.telegramBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    addon.TelegramID,
 		Text:      text,

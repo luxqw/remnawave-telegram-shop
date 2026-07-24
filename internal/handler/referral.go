@@ -49,6 +49,7 @@ func (h Handler) ReferralCallbackHandler(ctx context.Context, b *bot.Bot, update
 	count, err := h.referralRepository.CountByReferrer(ctx, customer.TelegramID)
 	if err != nil {
 		slog.Error("error counting referrals", "error", err)
+		h.showReferralError(ctx, b, update.CallbackQuery.Message.Message, langCode)
 		return
 	}
 	text := fmt.Sprintf(h.translation.GetText(langCode, "referral_text"), count)
@@ -97,6 +98,7 @@ func (h Handler) ReferralListCallbackHandler(ctx context.Context, b *bot.Bot, up
 	total, err := h.referralRepository.CountByReferrer(ctx, customer.TelegramID)
 	if err != nil {
 		slog.Error("error counting referrals", "error", err)
+		h.showReferralError(ctx, b, callbackMessage, langCode)
 		return
 	}
 
@@ -119,6 +121,7 @@ func (h Handler) ReferralListCallbackHandler(ctx context.Context, b *bot.Bot, up
 	granted, err := h.referralRepository.CountGrantedByReferrer(ctx, customer.TelegramID)
 	if err != nil {
 		slog.Error("error counting granted referrals", "error", err)
+		h.showReferralError(ctx, b, callbackMessage, langCode)
 		return
 	}
 
@@ -131,6 +134,7 @@ func (h Handler) ReferralListCallbackHandler(ctx context.Context, b *bot.Bot, up
 	referrals, err := h.referralRepository.FindByReferrerPaginated(ctx, customer.TelegramID, referralListPageSize, offset)
 	if err != nil {
 		slog.Error("error fetching paginated referrals", "error", err)
+		h.showReferralError(ctx, b, callbackMessage, langCode)
 		return
 	}
 
@@ -169,5 +173,22 @@ func (h Handler) ReferralListCallbackHandler(ctx context.Context, b *bot.Bot, up
 	})
 	if err != nil {
 		slog.Error("Error sending referral list message", "error", err)
+	}
+}
+
+// showReferralError gives visible feedback on a referral-repository failure instead of leaving
+// the previous screen frozen with stale buttons — matches showTopupError/showDeviceBuyError.
+func (h Handler) showReferralError(ctx context.Context, b *bot.Bot, callback *models.Message, langCode string) {
+	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    callback.Chat.ID,
+		MessageID: callback.ID,
+		ParseMode: models.ParseModeHTML,
+		Text:      h.translation.GetText(langCode, "referral_error"),
+		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+			{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)},
+		}},
+	})
+	if err != nil {
+		slog.Error("show referral error", "error", err)
 	}
 }

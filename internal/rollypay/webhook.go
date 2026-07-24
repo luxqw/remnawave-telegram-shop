@@ -400,6 +400,10 @@ func (c *WebhookClient) handleDeviceAddonRenewalPaid(ctx context.Context, orderI
 		return nil
 	}
 
+	if addon.PendingDeviceCount != nil {
+		c.applyPendingDeviceDecrease(ctx, addon)
+	}
+
 	newCycleExpiresAt := addon.CycleExpiresAt.AddDate(0, 0, config.DaysInMonth())
 	if newCycleExpiresAt.Before(time.Now()) {
 		newCycleExpiresAt = time.Now().AddDate(0, 0, config.DaysInMonth())
@@ -408,9 +412,50 @@ func (c *WebhookClient) handleDeviceAddonRenewalPaid(ctx context.Context, orderI
 		return fmt.Errorf("extend device addon cycle: %w", err)
 	}
 
+	// addon.DeviceCount is intentionally read here, after applyPendingDeviceDecrease may have just
+	// updated it in the DB — Go doesn't refresh addon.DeviceCount in place, so this local copy needs
+	// its own update to match, or the confirmation message would show the stale pre-decrease count.
+	if addon.PendingDeviceCount != nil {
+		addon.DeviceCount = *addon.PendingDeviceCount
+	}
 	c.notifyUserKey(ctx, addon.TelegramID, "device_addon_renewed", addon.DeviceCount)
 	slog.Info("rollypay device addon: renewed", "telegram_id", addon.TelegramID, "addon_id", id, "new_cycle_expires_at", newCycleExpiresAt)
 	return nil
+}
+
+// applyPendingDeviceDecrease shrinks the Remnawave device limit by exactly the queued delta and
+// commits the new device_count, clearing the pending flag. Duplicated from
+// payment.applyPendingDeviceDecrease rather than shared — payment.go already imports this package
+// (to create RollyPay invoices), so the reverse would cycle; same reasoning as upsertDeviceAddon's
+// billing-mode duplication just above. Best-effort: mutates addon.DeviceCount in place on success
+// so the caller's confirmation message reflects the new count, but a failure here shouldn't block
+// the cycle extension it's piggybacking on.
+func (c *WebhookClient) applyPendingDeviceDecrease(ctx context.Context, addon *database.DeviceAddon) {
+	target := *addon.PendingDeviceCount
+	if target < addon.DeviceCount {
+		rwUsers, err := c.remnawaveClient.GetUsersByTelegramID(ctx, addon.TelegramID)
+		if err != nil || len(rwUsers) == 0 {
+			slog.Error("apply pending device decrease: find remnawave user failed", "addon_id", addon.ID, "error", err)
+			return
+		}
+		rwUser := rwUsers[0]
+		limit := 0
+		if rwUser.HwidDeviceLimit != nil {
+			limit = *rwUser.HwidDeviceLimit
+		}
+		newLimit := database.DeviceLimitAfterDecrease(limit, addon.DeviceCount, target)
+		if err := c.remnawaveClient.UpdateUserDeviceLimit(ctx, rwUser.UUID, newLimit); err != nil {
+			slog.Error("apply pending device decrease: shrink limit failed", "addon_id", addon.ID, "error", err)
+			return
+		}
+	}
+	if err := c.deviceAddonRepository.UpdateDeviceCount(ctx, addon.ID, target); err != nil {
+		slog.Error("apply pending device decrease: update count failed", "addon_id", addon.ID, "error", err)
+		return
+	}
+	if err := c.deviceAddonRepository.SetPendingDeviceCount(ctx, addon.ID, nil); err != nil {
+		slog.Error("apply pending device decrease: clear pending failed", "addon_id", addon.ID, "error", err)
+	}
 }
 
 // handleNotPaid marks the underlying row cancelled/failed for admin visibility. It never claws

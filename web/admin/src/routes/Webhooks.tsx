@@ -24,11 +24,20 @@ export function Webhooks() {
     const params = new URLSearchParams({ page: String(pageNum), limit: "25" });
     if (status) params.set("status", status);
     if (provider) params.set("provider", provider);
-    api.get<Page<WebhookInboxEntry>>(`/admin/api/webhooks?${params.toString()}`).then(setPage);
+    api
+      .get<Page<WebhookInboxEntry>>(`/admin/api/webhooks?${params.toString()}`)
+      .then(setPage)
+      .catch((err) => {
+        toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить вебхуки", "error");
+        setPage({ items: [], total: 0, page: pageNum, limit: 25 });
+      });
   }, [pageNum, status, provider, reloadTick]);
 
   const openDetail = (w: WebhookInboxEntry) => {
-    api.get<WebhookInboxDetail>(`/admin/api/webhooks/${w.id}`).then(setDetail);
+    api
+      .get<WebhookInboxDetail>(`/admin/api/webhooks/${w.id}`)
+      .then(setDetail)
+      .catch((err) => toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить вебхук", "error"));
   };
 
   const retry = async (id: number) => {

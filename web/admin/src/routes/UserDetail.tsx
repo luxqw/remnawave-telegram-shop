@@ -24,6 +24,7 @@ type PendingAction =
 export function UserDetail(props: { id: number }) {
   const toast = useToast();
   const [detail, setDetail] = useState<UserDetailDTO | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [orders, setOrders] = useState<Page<Purchase> | null>(null);
   const [audit, setAudit] = useState<AuditLogEntry[] | null>(null);
   const [referrals, setReferrals] = useState<Referral[] | null>(null);
@@ -36,16 +37,57 @@ export function UserDetail(props: { id: number }) {
   const [reloadTick, setReloadTick] = useState(0);
 
   const load = () => {
-    api.get<UserDetailDTO>(`/admin/api/users/${props.id}`).then(setDetail).catch(() => setDetail(null));
+    setLoadError(null);
+    api
+      .get<UserDetailDTO>(`/admin/api/users/${props.id}`)
+      .then(setDetail)
+      .catch((err) => {
+        setDetail(null);
+        setLoadError(err instanceof ApiError ? err.message : "Не удалось загрузить пользователя");
+      });
   };
 
   useEffect(load, [props.id, reloadTick]);
 
   useEffect(() => {
-    if (tab === "orders") api.get<Page<Purchase>>(`/admin/api/users/${props.id}/orders`).then(setOrders);
-    if (tab === "audit") api.get<AuditLogEntry[]>(`/admin/api/users/${props.id}/audit`).then(setAudit);
-    if (tab === "referrals") api.get<Referral[]>(`/admin/api/users/${props.id}/referrals`).then(setReferrals);
-    if (tab === "messages") api.get<AdminMessage[]>(`/admin/api/users/${props.id}/messages`).then(setMessages);
+    // Resets each tab's own state to empty on failure (not left stale-and-silent) — the tab click
+    // that triggers this fetch is exactly what looked like a "dead button" before this fix.
+    if (tab === "orders") {
+      api
+        .get<Page<Purchase>>(`/admin/api/users/${props.id}/orders`)
+        .then(setOrders)
+        .catch((err) => {
+          toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить заказы", "error");
+          setOrders({ items: [], total: 0, page: 1, limit: 20 });
+        });
+    }
+    if (tab === "audit") {
+      api
+        .get<AuditLogEntry[]>(`/admin/api/users/${props.id}/audit`)
+        .then(setAudit)
+        .catch((err) => {
+          toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить аудит", "error");
+          setAudit([]);
+        });
+    }
+    if (tab === "referrals") {
+      api
+        .get<Referral[]>(`/admin/api/users/${props.id}/referrals`)
+        .then(setReferrals)
+        .catch((err) => {
+          toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить рефералов", "error");
+          setReferrals([]);
+        });
+    }
+    if (tab === "messages") {
+      api
+        .get<AdminMessage[]>(`/admin/api/users/${props.id}/messages`)
+        .then(setMessages)
+        .catch((err) => {
+          toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить сообщения", "error");
+          setMessages([]);
+        });
+    }
   }, [tab, props.id, reloadTick]);
 
   const refreshAll = () => setReloadTick((t) => t + 1);
@@ -111,7 +153,18 @@ export function UserDetail(props: { id: number }) {
     }
   };
 
-  if (detail === null) return <div class="shimmer" style={{ height: 240 }} />;
+  if (detail === null) {
+    if (loadError) {
+      return (
+        <div class="stack">
+          <button class="btn btn-ghost btn-sm" onClick={() => navigate("users")}>← К списку</button>
+          <div class="page-subtitle">⚠ {loadError}</div>
+          <button class="btn btn-sm" onClick={load}>Повторить</button>
+        </div>
+      );
+    }
+    return <div class="shimmer" style={{ height: 240 }} />;
+  }
 
   const { customer, remnawave, remnawaveError } = detail;
 

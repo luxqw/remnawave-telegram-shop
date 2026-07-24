@@ -117,7 +117,24 @@ func (h Handler) StartCallbackHandler(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 	if existingCustomer == nil {
-		return
+		// Shouldn't happen in practice — every route to CallbackStart passes through
+		// CreateCustomerIfNotExistMiddleware first — but silently doing nothing left "Назад" as a
+		// true dead end for whatever rare case gets here anyway (e.g. a race with that middleware).
+		// Self-heal by creating the row, same as StartCommandHandler's own new-customer branch,
+		// rather than stranding the customer on a frozen screen.
+		var username *string
+		if callback.From.Username != "" {
+			username = &callback.From.Username
+		}
+		existingCustomer, err = h.customerRepository.Create(ctxWithTime, &database.Customer{
+			TelegramID: callback.From.ID,
+			Language:   langCode,
+			Username:   username,
+		})
+		if err != nil {
+			slog.Error("error self-healing missing customer on start callback", "error", err)
+			return
+		}
 	}
 
 	inlineKeyboard := h.buildStartKeyboard(existingCustomer, langCode)

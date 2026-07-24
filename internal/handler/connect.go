@@ -16,54 +16,6 @@ import (
 	"remnawave-tg-shop-bot/utils"
 )
 
-func (h Handler) ConnectCommandHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	customer, err := h.customerRepository.FindByTelegramId(ctx, update.Message.Chat.ID)
-	if err != nil {
-		slog.Error("Error finding customer", "error", err)
-		return
-	}
-	if customer == nil {
-		slog.Error("customer not exist", "telegramId", utils.MaskHalfInt64(update.Message.Chat.ID), "error", err)
-		return
-	}
-
-	langCode := update.Message.From.LanguageCode
-
-	var resetStrategy string
-	var lastResetAt *time.Time
-	if rwUsers, rwErr := h.remnawaveClient.GetUsersByTelegramID(ctx, customer.TelegramID); rwErr == nil && len(rwUsers) > 0 {
-		resetStrategy = rwUsers[0].TrafficLimitStrategy
-		lastResetAt = rwUsers[0].LastTrafficResetAt
-	}
-
-	bd := h.translation.GetButton(langCode, "connect_button")
-	var markup [][]models.InlineKeyboardButton
-	if config.GetMiniAppURL() != "" {
-		markup = append(markup, []models.InlineKeyboardButton{bd.InlineWebApp(config.GetMiniAppURL())})
-	} else if config.IsWepAppLinkEnabled() {
-		if customer.SubscriptionLink != nil && customer.ExpireAt != nil && customer.ExpireAt.After(time.Now()) {
-			markup = append(markup, []models.InlineKeyboardButton{bd.InlineWebApp(*customer.SubscriptionLink)})
-		}
-	}
-	markup = append(markup, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
-
-	isDisabled := true
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    update.Message.Chat.ID,
-		Text:      buildConnectText(customer, langCode, resetStrategy, lastResetAt),
-		ParseMode: models.ParseModeHTML,
-		LinkPreviewOptions: &models.LinkPreviewOptions{
-			IsDisabled: &isDisabled,
-		},
-		ReplyMarkup: models.InlineKeyboardMarkup{
-			InlineKeyboard: markup,
-		},
-	})
-	if err != nil {
-		slog.Error("Error sending connect message", "error", err)
-	}
-}
-
 func (h Handler) ConnectCallbackHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 	callback := update.CallbackQuery.Message.Message
 
@@ -94,6 +46,17 @@ func (h Handler) ConnectCallbackHandler(ctx context.Context, b *bot.Bot, update 
 		if customer.SubscriptionLink != nil && customer.ExpireAt != nil && customer.ExpireAt.After(time.Now()) {
 			markup = append(markup, []models.InlineKeyboardButton{cbd.InlineWebApp(*customer.SubscriptionLink)})
 		}
+	}
+	// A lapsed/never-subscribed customer landing here (e.g. from the main menu's "Подключиться"
+	// button, still shown for the mini-app case above) otherwise has to go Back to Start just to
+	// find the Buy button — this screen already told them they need a subscription, so offer the
+	// one action that actually gets them one right here instead of making that a second hop.
+	if customer.ExpireAt == nil || !customer.ExpireAt.After(time.Now()) {
+		buyButtonKey := "buy_button"
+		if customer.SubscriptionLink != nil {
+			buyButtonKey = "renew_subscription_button"
+		}
+		markup = append(markup, []models.InlineKeyboardButton{h.translation.GetButton(langCode, buyButtonKey).InlineCallback(CallbackBuy)})
 	}
 	markup = append(markup, []models.InlineKeyboardButton{h.translation.GetButton(langCode, "back_button").InlineCallback(CallbackStart)})
 

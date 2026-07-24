@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/google/uuid"
 )
 
 type PaymentService struct {
@@ -167,6 +168,9 @@ func (s PaymentService) ProcessPurchaseById(ctx context.Context, purchaseId int6
 		if addonErr != nil {
 			slog.Error("purchase processed: find device addon for cycle sync failed", "telegram_id", customer.TelegramID, "error", addonErr)
 		} else if addon != nil && addon.Status != database.AddonStatusExpired && addon.BillingMode == database.AddonBillingModeBundled {
+			if addon.PendingDeviceCount != nil {
+				applyPendingDeviceDecrease(ctx, s.remnawaveClient, s.deviceAddonRepository, addon, user.UUID, user.HwidDeviceLimit)
+			}
 			if syncErr := s.deviceAddonRepository.ExtendCycle(ctx, addon.ID, user.ExpireAt); syncErr != nil {
 				slog.Error("purchase processed: sync device addon cycle failed", "addon_id", addon.ID, "error", syncErr)
 			}
@@ -356,7 +360,14 @@ func (s PaymentService) createRollyPayInvoice(ctx context.Context, amount float6
 		if addonErr != nil {
 			slog.Error("createRollyPayInvoice: find device addon failed", "telegram_id", customer.TelegramID, "error", addonErr)
 		} else if addon != nil && addon.Status != database.AddonStatusExpired && addon.BillingMode == database.AddonBillingModeBundled {
-			amount += float64(addon.DeviceCount) * float64(config.DeviceSlotPriceRUB())
+			// Charge for the count that will actually be in effect once this renewal lands (see
+			// applyPendingDeviceDecrease), not the stale pre-decrease count — otherwise the customer
+			// pays for a slot this invoice is about to remove.
+			effectiveCount := addon.DeviceCount
+			if addon.PendingDeviceCount != nil {
+				effectiveCount = *addon.PendingDeviceCount
+			}
+			amount += float64(effectiveCount) * float64(config.DeviceSlotPriceRUB())
 		}
 	}
 
@@ -493,6 +504,37 @@ func (s PaymentService) calculateRollover(ctx context.Context, telegramID int64)
 		return 0
 	}
 	return rollover
+}
+
+// applyPendingDeviceDecrease shrinks the Remnawave device limit by exactly the queued delta and
+// commits the new device_count, clearing the pending flag. Duplicated in rollypay/webhook.go's
+// standalone renewal path rather than shared — same reasoning as upsertDeviceAddon's billing-mode
+// duplication there, this package already imports rollypay, so the reverse would cycle.
+//
+// The delta (not an absolute base+count recompute) matters: this bot never assumes what the free
+// base allowance is, only ever adjusts relative to whatever Remnawave currently reports — matching
+// every other device-limit mutation in this codebase (buying a slot, expiry-trimming an unpaid
+// one). Best-effort: a failure here shouldn't block the renewal it's piggybacking on.
+func applyPendingDeviceDecrease(ctx context.Context, rw *remnawave.Client, repo *database.DeviceAddonRepository, addon *database.DeviceAddon, userUUID uuid.UUID, currentLimit *int) {
+	target := *addon.PendingDeviceCount
+	if target < addon.DeviceCount {
+		limit := 0
+		if currentLimit != nil {
+			limit = *currentLimit
+		}
+		newLimit := database.DeviceLimitAfterDecrease(limit, addon.DeviceCount, target)
+		if err := rw.UpdateUserDeviceLimit(ctx, userUUID, newLimit); err != nil {
+			slog.Error("apply pending device decrease: shrink limit failed", "addon_id", addon.ID, "error", err)
+			return
+		}
+	}
+	if err := repo.UpdateDeviceCount(ctx, addon.ID, target); err != nil {
+		slog.Error("apply pending device decrease: update count failed", "addon_id", addon.ID, "error", err)
+		return
+	}
+	if err := repo.SetPendingDeviceCount(ctx, addon.ID, nil); err != nil {
+		slog.Error("apply pending device decrease: clear pending failed", "addon_id", addon.ID, "error", err)
+	}
 }
 
 // isTrafficLimited reports whether the customer's Remnawave account is currently blocked for

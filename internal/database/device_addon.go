@@ -45,6 +45,12 @@ type DeviceAddon struct {
 	Status         AddonStatus
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// PendingDeviceCount is a customer-requested voluntary decrease, queued rather than applied
+	// immediately — no refund for the current cycle, so shrinking the limit before the customer
+	// has even stopped paying for it would give them fewer devices for money already spent.
+	// Applied (and cleared) at the next successful renewal, bundled or standalone — see
+	// applyPendingDeviceDecrease in payment.go and webhook.go.
+	PendingDeviceCount *int
 }
 
 // DetermineAddonBillingMode decides bundled vs standalone from the customer's active Tribute
@@ -66,7 +72,7 @@ func NewDeviceAddonRepository(pool *pgxpool.Pool) *DeviceAddonRepository {
 }
 
 const deviceAddonSelectCols = `id, telegram_id, device_count, billing_mode, cycle_expires_at,
-	grace_until, status, created_at, updated_at`
+	grace_until, status, created_at, updated_at, pending_device_count`
 
 func scanDeviceAddon(row interface {
 	Scan(...any) error
@@ -74,7 +80,7 @@ func scanDeviceAddon(row interface {
 	var a DeviceAddon
 	err := row.Scan(
 		&a.ID, &a.TelegramID, &a.DeviceCount, &a.BillingMode, &a.CycleExpiresAt,
-		&a.GraceUntil, &a.Status, &a.CreatedAt, &a.UpdatedAt,
+		&a.GraceUntil, &a.Status, &a.CreatedAt, &a.UpdatedAt, &a.PendingDeviceCount,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -131,6 +137,37 @@ func (r *DeviceAddonRepository) UpdateDeviceCount(ctx context.Context, id int64,
 	_, err := r.pool.Exec(ctx, query, deviceCount, id)
 	if err != nil {
 		return fmt.Errorf("update device addon count: %w", err)
+	}
+	return nil
+}
+
+// DeviceLimitAfterDecrease computes the Remnawave device limit after dropping from deviceCount to
+// targetDeviceCount, relative to whatever Remnawave currently reports (currentLimit) rather than
+// an absolute base+count recompute — this bot never assumes what the free base allowance is, only
+// ever adjusts relative to the live value, matching every other device-limit mutation (buying a
+// slot, expiry-trimming an unpaid one). Floors at 0; a no-op (targetDeviceCount >= deviceCount)
+// returns currentLimit unchanged. Shared by payment.go and rollypay/webhook.go's duplicated
+// applyPendingDeviceDecrease (can't import a common non-database package between them without a
+// cycle, but both already depend on this one).
+func DeviceLimitAfterDecrease(currentLimit, deviceCount, targetDeviceCount int) int {
+	delta := deviceCount - targetDeviceCount
+	if delta <= 0 {
+		return currentLimit
+	}
+	newLimit := currentLimit - delta
+	if newLimit < 0 {
+		return 0
+	}
+	return newLimit
+}
+
+// SetPendingDeviceCount queues (target != nil) or clears (target == nil) a voluntary decrease to
+// be applied at the addon's next renewal — see PendingDeviceCount's doc comment.
+func (r *DeviceAddonRepository) SetPendingDeviceCount(ctx context.Context, id int64, target *int) error {
+	query := `UPDATE device_addons SET pending_device_count = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.pool.Exec(ctx, query, target, id)
+	if err != nil {
+		return fmt.Errorf("set device addon pending decrease: %w", err)
 	}
 	return nil
 }

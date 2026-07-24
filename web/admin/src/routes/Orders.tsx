@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { Purchase, Page } from "../api/types";
 import { GlassCard } from "../components/GlassCard";
 import { DataTable, type Column } from "../components/DataTable";
@@ -7,12 +7,14 @@ import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
 import { TelegramUserLink } from "../components/TelegramUserLink";
 import { DetailModal } from "../components/DetailModal";
+import { useToast } from "../components/Toast";
 import { formatMoney } from "../lib/format";
 
 const STATUSES = ["", "new", "pending", "paid", "cancel"];
 const TYPES = ["", "crypto", "yookasa", "telegram", "tribute", "rollypay"];
 
 export function Orders() {
+  const toast = useToast();
   const [page, setPage] = useState<Page<Purchase> | null>(null);
   const [pageNum, setPageNum] = useState(1);
   const [status, setStatus] = useState("");
@@ -23,11 +25,23 @@ export function Orders() {
     const params = new URLSearchParams({ page: String(pageNum), limit: "25" });
     if (status) params.set("status", status);
     if (invoiceType) params.set("invoiceType", invoiceType);
-    api.get<Page<Purchase>>(`/admin/api/orders?${params.toString()}`).then(setPage);
+    api
+      .get<Page<Purchase>>(`/admin/api/orders?${params.toString()}`)
+      .then(setPage)
+      .catch((err) => {
+        toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить заказы", "error");
+        setPage({ items: [], total: 0, page: pageNum, limit: 25 });
+      });
   }, [pageNum, status, invoiceType]);
 
   const openDetail = (p: Purchase) => {
-    api.get<Purchase>(`/admin/api/orders/${p.id}`).then(setDetail).catch(() => setDetail(p));
+    api
+      .get<Purchase>(`/admin/api/orders/${p.id}`)
+      .then(setDetail)
+      .catch((err) => {
+        toast.push(err instanceof ApiError ? err.message : "Не удалось обновить данные заказа, показаны последние известные", "error");
+        setDetail(p);
+      });
   };
 
   const exportUrl = () => {

@@ -37,6 +37,9 @@ type Handler struct {
 	// int64 key within one shared map.
 	topupInvoiceCache       *cache.Cache
 	deviceTopupInvoiceCache *cache.Cache
+	// deviceManageAwaitingInput mirrors topupAwaitingInput: telegram ID -> prompt message ID, for
+	// the "type an exact target slot count" flow in DeviceManageCallbackHandler.
+	deviceManageAwaitingInput *cache.Cache
 }
 
 func NewHandler(
@@ -56,23 +59,25 @@ func NewHandler(
 	topupAwaitingInput *cache.Cache,
 	topupInvoiceCache *cache.Cache,
 	deviceTopupInvoiceCache *cache.Cache,
+	deviceManageAwaitingInput *cache.Cache,
 ) *Handler {
 	return &Handler{
-		syncService:             syncService,
-		paymentService:          paymentService,
-		customerRepository:      customerRepository,
-		purchaseRepository:      purchaseRepository,
-		rollypayClient:          rollypayClient,
-		translation:             translation,
-		referralRepository:      referralRepository,
-		cache:                   cache,
-		remnawaveClient:         remnawaveClient,
-		topupRepository:         topupRepository,
-		deviceTopupRepository:   deviceTopupRepository,
-		deviceAddonRepository:   deviceAddonRepository,
-		adminMessageRepository:  adminMessageRepository,
-		topupAwaitingInput:      topupAwaitingInput,
-		topupInvoiceCache:       topupInvoiceCache,
-		deviceTopupInvoiceCache: deviceTopupInvoiceCache,
+		syncService:               syncService,
+		paymentService:            paymentService,
+		customerRepository:        customerRepository,
+		purchaseRepository:        purchaseRepository,
+		rollypayClient:            rollypayClient,
+		translation:               translation,
+		referralRepository:        referralRepository,
+		cache:                     cache,
+		remnawaveClient:           remnawaveClient,
+		topupRepository:           topupRepository,
+		deviceTopupRepository:     deviceTopupRepository,
+		deviceAddonRepository:     deviceAddonRepository,
+		adminMessageRepository:    adminMessageRepository,
+		topupAwaitingInput:        topupAwaitingInput,
+		topupInvoiceCache:         topupInvoiceCache,
+		deviceTopupInvoiceCache:   deviceTopupInvoiceCache,
+		deviceManageAwaitingInput: deviceManageAwaitingInput,
 	}
 }

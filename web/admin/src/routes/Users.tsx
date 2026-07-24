@@ -1,11 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { Customer, Page } from "../api/types";
 import { GlassCard } from "../components/GlassCard";
 import { DataTable, type Column } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { Badge } from "../components/Badge";
 import { TelegramUserLink } from "../components/TelegramUserLink";
+import { useToast } from "../components/Toast";
 import { navigate } from "../router";
 import { useDebounce } from "../lib/useDebounce";
 
@@ -33,6 +34,7 @@ function statusRank(c: Customer): string {
 }
 
 export function Users() {
+  const toast = useToast();
   const [page, setPage] = useState<Page<Customer> | null>(null);
   const [pageNum, setPageNum] = useState(1);
   const [filter, setFilter] = useState("");
@@ -48,6 +50,10 @@ export function Users() {
     api
       .get<Page<Customer>>(`/admin/api/users?${params.toString()}`)
       .then(setPage)
+      .catch((err) => {
+        toast.push(err instanceof ApiError ? err.message : "Не удалось загрузить пользователей", "error");
+        setPage({ items: [], total: 0, page: pageNum, limit: 20 });
+      })
       .finally(() => setLoading(false));
   }, [pageNum, filter, debouncedSearch]);
 

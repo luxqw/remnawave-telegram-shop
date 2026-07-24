@@ -63,6 +63,7 @@ func main() {
 		panic(err)
 	}
 	topupInputCache := cache.NewCache(3 * time.Minute)
+	deviceManageAwaitingInput := cache.NewCache(3 * time.Minute)
 	// Separate from `cache` (the subscription purchaseId -> messageId map, defined next): TrafficTopup
 	// and DeviceTopup IDs come from their own DB sequences and can collide with purchase IDs (or each
 	// other) on the same int64 key within one shared map. Created before `cache` shadows the package
@@ -166,7 +167,7 @@ func main() {
 
 	opsService := adminops.NewService(customerRepository, purchaseRepository, topupRepository, referralRepository, auditLogRepository, webhookInboxRepository, notificationLogRepository, adminMessageRepository, botRuntimeSettingsRepository, remnawaveClient, syncService, b, tm)
 
-	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, deviceAddonRepository, adminMessageRepository, topupInputCache, topupInvoiceCache, deviceTopupInvoiceCache)
+	h := handler.NewHandler(syncService, paymentService, tm, customerRepository, purchaseRepository, rollypayClient, referralRepository, cache, remnawaveClient, topupRepository, deviceTopupRepository, deviceAddonRepository, adminMessageRepository, topupInputCache, topupInvoiceCache, deviceTopupInvoiceCache, deviceManageAwaitingInput)
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
@@ -223,6 +224,11 @@ func main() {
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDevicesResetConfirm, bot.MatchTypeExact, h.DevicesResetConfirmCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDeviceBuy, bot.MatchTypeExact, h.DeviceBuyCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDeviceCancel, bot.MatchTypePrefix, h.DeviceCancelCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	// MatchTypeExact on both — "device_decrease" is a literal prefix of "device_decrease_undo", so
+	// this would hit the same first-match-wins collision as payment/payment_cancel (see that fix's
+	// comment above) if either were registered with MatchTypePrefix instead.
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDeviceManage, bot.MatchTypeExact, h.DeviceManageCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, handler.CallbackDeviceDecreaseUndo, bot.MatchTypeExact, h.DeviceDecreaseUndoCallbackHandler, h.AnswerCallbackQueryMiddleware, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 	// CallbackPaymentCancel ("payment_cancel") must be registered before CallbackPayment
 	// ("payment") — the router (go-telegram/bot) returns the first MatchTypePrefix match, and
 	// "payment" is a string prefix of "payment_cancel", so registering payment first swallowed
@@ -237,6 +243,14 @@ func main() {
 		_, ok := h.TopupAwaitingInput(update.Message.From.ID)
 		return ok
 	}, h.TopupCustomAmountTextHandler, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
+
+	b.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+		if update.Message == nil || update.Message.Text == "" {
+			return false
+		}
+		_, ok := h.DeviceManageAwaitingInput(update.Message.From.ID)
+		return ok
+	}, h.DeviceManageAmountTextHandler, h.SuspiciousUserFilterMiddleware, h.CreateCustomerIfNotExistMiddleware)
 
 	// Registered last among text-message handlers: first-match-wins dispatch means this only ever
 	// sees a customer's free-text message once every more specific awaiting-input flow above (e.g.
